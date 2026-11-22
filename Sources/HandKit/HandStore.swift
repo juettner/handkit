@@ -68,6 +68,14 @@ public final class HandStore: ObservableObject {
         save()
     }
 
+    /// Forgets one drawing of a character: the one at that place in its list.
+    public func remove(at index: Int, for character: String) {
+        guard var drawings = hand.glyphs[character], drawings.indices.contains(index) else { return }
+        drawings.remove(at: index)
+        hand.glyphs[character] = drawings.isEmpty ? nil : drawings
+        save()
+    }
+
     /// Forgets every drawing of a character.
     public func forget(_ character: String) {
         hand.glyphs[character] = nil

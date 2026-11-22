@@ -127,6 +127,8 @@ public struct HandEditor: View {
     @State private var added: Set<String> = []
     /// What is typed on the "letters you join" line.
     @State private var joining = ""
+    /// Which of the drawings already kept is picked, in the row above the square.
+    @State private var picked: Int? = nil
     /// What is typed on the "a drawing, by name" line.
     @State private var naming = ""
     @State private var fileNote: String? = nil
@@ -258,6 +260,8 @@ public struct HandEditor: View {
                     .accessibilityLabel("Forget every drawing of this character")
             }
 
+            previous
+
             ruledSquare
                 .padding(.top, 8)
 
@@ -346,6 +350,84 @@ public struct HandEditor: View {
                     .accessibilityLabel("The name of a drawing")
                 Word("draw", tone: .grey, disabled: naming.trimmingCharacters(in: .whitespaces).isEmpty, action: name)
                     .accessibilityLabel("Draw a picture with this name")
+            }
+        }
+    }
+
+    /// How tall the row of drawings already kept is.
+    private static let thumb: CGFloat = 56
+
+    /// The drawings already kept for this character, small, in the order they
+    /// were drawn: what the pen will pick between. Tap one to pick it, and
+    /// "forget this one" removes just that drawing. The row keeps its height
+    /// when it is empty, so the square below never moves under the pen.
+    private var previous: some View {
+        let kept = hands.hand.glyphs[character] ?? []
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Array(kept.enumerated()), id: \.offset) { number, glyph in
+                    Button { picked = picked == number ? nil : number } label: {
+                        thumbnail(glyph)
+                            .frame(width: thumbWidth(glyph), height: Self.thumb)
+                            .overlay(Rectangle().stroke(picked == number ? style.ink : style.edge, lineWidth: 1))
+                            .overlay(alignment: .topTrailing) {
+                                if glyph.isRare {
+                                    Text("rare")
+                                        .font(style.font(9))
+                                        .foregroundStyle(style.grey)
+                                        .padding(2)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressedStyle())
+                    .accessibilityLabel("Drawing \(number + 1) of \(label(character))\(glyph.isRare ? ", rare" : "")")
+                    .accessibilityAddTraits(picked == number ? .isSelected : [])
+                }
+                if let chosen = picked, kept.indices.contains(chosen) {
+                    Word("forget this one", tone: .grey, size: TypeSize.small) {
+                        hands.remove(at: chosen, for: character)
+                        picked = nil
+                    }
+                }
+            }
+        }
+        .frame(height: Self.thumb)
+        .padding(.top, 4)
+        // Another character has other drawings: nothing of this one is picked there.
+        .onChange(of: character) { picked = nil }
+    }
+
+    private func thumbWidth(_ glyph: Glyph) -> CGFloat {
+        isFreeform ? Self.thumb : max(40, CGFloat(glyph.advance) * Ruling.unit * Self.thumb + 16)
+    }
+
+    /// One kept drawing, small. A letter is shown sitting on its line, at the
+    /// size it has against the ruling, so a comma looks like a comma and not
+    /// like a letter-sized blob. A picture or a scribble fills the box.
+    @ViewBuilder
+    private func thumbnail(_ glyph: Glyph) -> some View {
+        if isFreeform {
+            GlyphView(glyph, ink: style.ink)
+                .padding(4)
+        } else {
+            Canvas { graphics, size in
+                let unit = Ruling.unit * size.height
+                let base = Ruling.baseline * size.height
+                var line = Path()
+                line.move(to: CGPoint(x: 0, y: base))
+                line.addLine(to: CGPoint(x: size.width, y: base))
+                graphics.stroke(line, with: .color(style.rule), lineWidth: 1)
+
+                let left = (size.width - CGFloat(glyph.advance) * unit) / 2
+                for (number, stroke) in glyph.points.enumerated() where !stroke.isEmpty {
+                    let placed = stroke.map { CGPoint(x: left + $0.x * unit, y: base + $0.y * unit) }
+                    graphics.stroke(
+                        Written.smooth(placed),
+                        with: .color(glyph.color(of: number) ?? style.ink),
+                        style: StrokeStyle(lineWidth: max(1, Pen.nib * unit), lineCap: .round, lineJoin: .round)
+                    )
+                }
             }
         }
     }
