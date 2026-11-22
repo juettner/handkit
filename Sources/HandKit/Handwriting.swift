@@ -55,7 +55,11 @@ private struct WritingLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         // Asked for its ideal size (no width), it answers with one long line.
         guard let width = proposal.width, width.isFinite, width > 0 else {
-            return Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures).size
+            let size = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures).size
+            // Rounded up to a whole point. The drawing is worked out again at whatever width this view is then
+            // given, and SwiftUI snaps that width to the pixel grid. Given a hair less than the line needs, the
+            // last word would no longer fit and would drop to a second line that nobody made room for.
+            return CGSize(width: size.width.rounded(.up), height: size.height)
         }
         let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
         return CGSize(width: width, height: written.size.height)
