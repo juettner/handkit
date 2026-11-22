@@ -45,8 +45,20 @@ struct DemoView: View {
 
     private let style = HandStyle.journal
 
-    /// Pictures kept in the hand beside the letters. P.S. shows these two as its envelopes.
-    static let pictures = ["envelope-sealed", "envelope-open", "doodle"]
+    /// Pictures kept in the hand beside the letters, in the order the drawing
+    /// page lists them. P.S. shows the first two as its envelopes and the last
+    /// three in the strip at the top of its reader's page.
+    static let pictures = ["envelope-sealed", "envelope-open", "doodle", "status-signal", "status-wifi", "status-battery"]
+    /// What the drawing page calls the ones whose names would read oddly.
+    static let labels = ["status-signal": "signal", "status-wifi": "wifi", "status-battery": "battery"]
+    /// The three P.S. draws in the strip at the top of its reader's page, at
+    /// these sizes in points (HandStatusBar.swift there). Small and wide, so
+    /// the drawing page gives each a box of that shape to fill.
+    static let sizes = [
+        "status-signal": CGSize(width: 18, height: 12),
+        "status-wifi": CGSize(width: 17, height: 12),
+        "status-battery": CGSize(width: 27, height: 13),
+    ]
 
     /// The signatures, kept in the hand as a drawing named "signature", so
     /// they are saved with it. `Binding(get:set:)` is a pair of functions the
@@ -104,7 +116,7 @@ struct DemoView: View {
         .fullScreenCover(isPresented: $drawing) {
             // The pictures the apps using this hand need, so they are on the page
             // ready to draw. Add a name here when an app needs another.
-            HandEditor(style: style, drawings: DemoView.pictures)
+            HandEditor(style: style, drawings: DemoView.pictures, labels: DemoView.labels, sizes: DemoView.sizes)
         }
         .fullScreenCover(isPresented: $signing) {
             SignaturePad(signatures: signatures, style: style)

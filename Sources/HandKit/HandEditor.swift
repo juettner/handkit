@@ -109,6 +109,17 @@ private enum Ruling {
     static var right: CGFloat { 0.5 + unit / 2 }
 }
 
+/// A picture the app shows very small (see `sizes` on HandEditor).
+private enum SmallPicture {
+    /// The longer side of the pale box to fill, as a fraction of the square.
+    static let box: CGFloat = 0.8
+    /// GlyphView's line is never thinner than this many points, and it leaves
+    /// this much of the frame for the drawing. Together they say how thick the
+    /// line is against a drawing shown small. Keep them equal to GlyphView's.
+    static let line: CGFloat = 1.2
+    static let fill: CGFloat = 0.92
+}
+
 /// The app icon, as fractions of its side.
 private enum Icon {
     /// The line: thick, so the icon still reads when it is small.
@@ -130,6 +141,10 @@ public struct HandEditor: View {
     private let onClose: (() -> Void)?
     /// Named drawings the app wants drawn, listed even before they are.
     private let drawings: [String]
+    /// What to call a named drawing on the page, where its name would not do.
+    private let labels: [String: String]
+    /// The size, in points, at which the app shows a named drawing, for those it shows small.
+    private let sizes: [String: CGSize]
     /// Whether the page asks for the app's icon.
     private let asksForIcon: Bool
 
@@ -177,6 +192,13 @@ public struct HandEditor: View {
     ///   - drawings: names of pictures your app uses (see `Hand.drawings(named:)`).
     ///     They get a row of their own at the top, waiting to be drawn, with
     ///     hyphens shown as spaces. Left empty, the page has a line for typing a name.
+    ///   - labels: what to call a picture in that row, by its name, when the
+    ///     name itself reads badly: `["status-wifi": "wifi"]`.
+    ///   - sizes: the size in points your app shows a picture at, by its name,
+    ///     for pictures shown very small (a status icon of 18 by 12). The
+    ///     square then has a pale box of that shape to fill, the pen is as
+    ///     thick against the box as the line will be at that size, and each
+    ///     kept drawing is shown beside the name at its real size.
     ///   - icon: whether the page asks for the app's icon: an "app icon" entry
     ///     in the row of pictures, where the square is the icon. Turn it off
     ///     if people using your app can reach this page.
@@ -188,10 +210,14 @@ public struct HandEditor: View {
         style: HandStyle = .journal,
         sample: String = "the quick brown fox jumps over the lazy dog",
         drawings: [String] = [],
+        labels: [String: String] = [:],
+        sizes: [String: CGSize] = [:],
         icon: Bool = true,
         onClose: (() -> Void)? = nil
     ) {
         self.drawings = drawings
+        self.labels = labels
+        self.sizes = sizes
         self.asksForIcon = icon
         _hands = ObservedObject(wrappedValue: store)
         self.style = style
@@ -230,9 +256,24 @@ public struct HandEditor: View {
         if let picked, kept.indices.contains(picked) { return kept[picked] }
         return kept.last
     }
-    /// What an entry is called on the page: its name for a drawing, itself otherwise.
+    /// What an entry is called on the page: for a drawing, what the app calls
+    /// it or else its name with spaces for hyphens; itself otherwise.
     private func label(_ entry: String) -> String {
-        Hand.drawingName(of: entry)?.replacingOccurrences(of: "-", with: " ") ?? entry
+        guard let name = Hand.drawingName(of: entry) else { return entry }
+        return labels[name] ?? name.replacingOccurrences(of: "-", with: " ")
+    }
+    /// The size the app shows the picture being drawn at, if it said. Nil for
+    /// everything else, and for a size that is not a size.
+    private var shownSize: CGSize? {
+        guard let size = drawingName.flatMap({ sizes[$0] }), size.width > 0, size.height > 0 else { return nil }
+        return size
+    }
+    /// The pale box to fill when drawing a picture that is shown small, in
+    /// fractions of the square: the shape the app shows it in, as large as fits.
+    private func smallBox(_ shown: CGSize) -> CGRect {
+        let width = min(SmallPicture.box, SmallPicture.box * shown.width / shown.height)
+        let height = width * shown.height / shown.width
+        return CGRect(x: (1 - width) / 2, y: (1 - height) / 2, width: width, height: height)
     }
     /// The keys of every picture: the ones the app asked for, in its order, then any others in the hand.
     private var pictures: [String] {
@@ -333,6 +374,12 @@ public struct HandEditor: View {
                 Text(isScribble ? "a scribble" : label(character))
                     .font(style.font(isFreeform ? TypeSize.body : TypeSize.question))
                     .foregroundStyle(style.ink)
+                // The last drawing kept (or the one picked), at the size the app shows it.
+                if let shownSize, let kept = hands.hand.glyphs[character], let glyph = picked.flatMap({ kept.indices.contains($0) ? kept[$0] : nil }) ?? kept.last {
+                    GlyphView(glyph, ink: style.ink)
+                        .frame(width: shownSize.width, height: shownSize.height)
+                        .accessibilityLabel("This drawing at the size the app shows it")
+                }
                 Small(drawnNote)
                 Spacer()
                 // Always there, dimmed until there is something to forget, so the
@@ -410,6 +457,8 @@ public struct HandEditor: View {
 
             Small(isIcon
                 ? "The app's icon. The square is the icon: what you draw, where you draw it, as thick as you see it. The pale outline is where the corners are cut off. Keep it, then send the icon; it replaces icon.png in the app's AppIcon.appiconset. Keep more than one and the one you tap in the row is the one sent."
+                : shownSize != nil
+                ? "A picture the app shows very small: about \(Int(shownSize?.width ?? 0)) by \(Int(shownSize?.height ?? 0)) points. Fill the pale box, with few strokes and clear gaps between them. The pen is as thick here, against the box, as the line will be there. Once kept, it is shown beside its name at its real size: if you cannot read it there, forget it and draw it simpler."
                 : drawingName != nil
                 ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen's colour or its line for part of it. Draw it more than once with again and the app can vary them."
                 : isScribble
@@ -649,10 +698,21 @@ public struct HandEditor: View {
                     graphics.stroke(path, with: .color(rule.color), style: StrokeStyle(lineWidth: 1, dash: rule.dash))
                 }
 
+                // A picture shown small: the pale box is the frame the app shows it in.
+                if let shownSize {
+                    let box = smallBox(shownSize)
+                    let edge = Path(CGRect(x: box.minX * s, y: box.minY * s, width: box.width * s, height: box.height * s))
+                    graphics.stroke(edge, with: .color(style.faint), style: StrokeStyle(lineWidth: 1, dash: [4, 6]))
+                }
+
                 // The pen is as thick here, against the ruling, as it will be on the
                 // page; on the icon's square, as thick as it will be on the icon.
+                // For a picture shown small the line cannot shrink with it (it
+                // would vanish), so against the box it is thicker than a letter's.
+                let letterNib = Pen.nib * Ruling.unit * s
+                let smallNib = shownSize.map { SmallPicture.line * smallBox($0).width * s / ($0.width * SmallPicture.fill) } ?? 0
                 // This is the usual line: a stroke drawn fine or bold is a multiple of it.
-                let nib = isIcon ? Icon.line * s : Pen.nib * Ruling.unit * s
+                let nib = isIcon ? Icon.line * s : max(letterNib, smallNib)
 
                 // The lighter guides are for letters. A scribble or a picture is any size, anywhere.
                 if !isFreeform {
