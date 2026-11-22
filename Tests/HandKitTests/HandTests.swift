@@ -87,6 +87,62 @@ final class HandTests: XCTestCase {
         XCTAssertEqual(written.wordStarts.count, 1)
     }
 
+    func testCrossingOutMarksAreCutOutOfTheText() {
+        let parts = Hand.struck("you looked ~~nice~~ incredible")
+        XCTAssertEqual(parts.map(\.text), ["you looked ", "nice", " incredible"])
+        XCTAssertEqual(parts.map(\.struck), [false, true, false])
+        XCTAssertEqual(Hand.unstruck("you looked ~~nice~~ incredible"), "you looked nice incredible")
+        // A mark that never closes is not a mark.
+        XCTAssertEqual(Hand.struck("almost ~~there").map(\.text), ["almost ~~there"])
+        XCTAssertEqual(Hand.struck("~~a~~ b ~~c").map(\.struck), [true, false])
+        XCTAssertEqual(Hand.unstruck("no marks at all"), "no marks at all")
+        XCTAssertTrue(Hand.struck("").isEmpty)
+    }
+
+    func testTheMarksAreNotLettersTheHandIsMissing() {
+        let h = hand("a", "b")
+        XCTAssertEqual(h.missing(in: "a ~~b~~ a"), [])
+        XCTAssertTrue(h.covers("a ~~b~~ a"))
+    }
+
+    func testWordsKnowWhichOfThemAreCrossedOutAndWhereLinesBreak() {
+        let cut = Written.words(of: "aa ~~bb cc~~ dd\nee")
+        XCTAssertEqual(cut.words, ["aa", "bb", "cc", "dd", "ee"])
+        XCTAssertEqual(cut.struck, [1, 2])
+        XCTAssertEqual(cut.breaks, [4])
+        // Crossed out in part is crossed out.
+        XCTAssertEqual(Written.words(of: "un~~do~~").struck, [0])
+        XCTAssertEqual(Written.words(of: "\n\naa  \n bb").breaks, [1])
+    }
+
+    func testACrossedOutWordIsWrittenAndThenStruckThrough() {
+        let h = hand("a", "b")
+        let plain = Written("aa bb", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        let struck = Written("~~aa~~ bb", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        // One more stroke: the line through it. The page is no bigger for it.
+        XCTAssertEqual(struck.marks.count, plain.marks.count + 1)
+        XCTAssertEqual(struck.size, plain.size)
+        XCTAssertEqual(struck.wordStarts.count, 2)
+        // The line is drawn after the word it crosses out and before the next word starts.
+        let line = struck.marks[2]
+        XCTAssertGreaterThan(line.start, struck.marks[1].start)
+        XCTAssertLessThan(line.start, struck.marks[3].start)
+        // Two words crossed out together share one line; on two rows they need two.
+        let together = Written("~~aa bb~~", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        XCTAssertEqual(together.marks.count, plain.marks.count + 1)
+        let wrapped = Written("~~aa bb~~", hand: h, xHeight: 10, width: 30, lettersPerSecond: 15, playful: false)
+        XCTAssertEqual(wrapped.marks.count, plain.marks.count + 2)
+    }
+
+    func testLoosenessAndSlantChangeTheMoodNotTheLayout() {
+        let h = hand("a")
+        let usual = Written("aa aa", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        let hurried = Written("aa aa", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false, looseness: 1.6, slant: 0.15)
+        XCTAssertEqual(usual.size, hurried.size)
+        XCTAssertEqual(usual.marks.count, hurried.marks.count)
+        XCTAssertEqual(usual.duration, hurried.duration, accuracy: 0.0001)
+    }
+
     func testNamedDrawingsAreKeptApartFromWriting() {
         var h = hand("a", "b")
         h.glyphs[Hand.drawingKey("envelope-sealed")] = [stroke(), stroke()]

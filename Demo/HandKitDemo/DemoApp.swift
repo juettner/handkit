@@ -43,7 +43,7 @@ struct DemoView: View {
     private let style = HandStyle.journal
 
     /// Pictures kept in the hand beside the letters. P.S. shows these two as its envelopes.
-    static let pictures = ["envelope-sealed", "envelope-open"]
+    static let pictures = ["envelope-sealed", "envelope-open", "doodle"]
 
     var body: some View {
         ZStack {

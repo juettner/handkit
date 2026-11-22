@@ -19,7 +19,9 @@
 //                   Finished strokes are drawn whole; the stroke in progress
 //                   is drawn up to where the nib has got to.
 //
-//  Fresh ink is at full strength and dries to the letter's own shade.
+//  Fresh ink is wet: at full strength and a touch wider. It dries to the
+//  letter's own shade over `dryTime`, so with a long drying time the line
+//  visibly settles into the paper behind the nib.
 //  Tapping finishes the line at once. Reduce Motion shows it finished. The
 //  phone ticks as each word starts. VoiceOver reads the text as ordinary
 //  text.
@@ -39,13 +41,15 @@ private struct WritingLayout: Layout {
     let xHeight: CGFloat
     let playful: Bool
     let seed: Int
+    let looseness: Double
+    let slant: Double
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         // Asked for its ideal size (no width), it answers with one long line.
         guard let width = proposal.width, width.isFinite, width > 0 else {
-            return Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed).size
+            return Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant).size
         }
-        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: 0, playful: playful, seed: seed)
+        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant)
         return CGSize(width: width, height: written.size.height)
     }
 
@@ -77,6 +81,12 @@ public struct Handwriting: View {
     var playful = true
     /// Picks the drawings differently for the same text. Zero is the usual way.
     var seed = 0
+    /// How unevenly the letters are put down. 1 is the usual hand; more is looser.
+    var looseness: Double = 1
+    /// How far the letters lean forward. 0 is as drawn; 0.15 is a hurry.
+    var slant: Double = 0
+    /// How long the ink stays wet, in seconds.
+    var dryTime: TimeInterval = Pen.dryTime
     /// Called once the whole line is on the page (written or tapped through).
     var onDone: (() -> Void)? = nil
 
@@ -99,6 +109,9 @@ public struct Handwriting: View {
         haptics: Bool = true,
         playful: Bool = true,
         seed: Int = 0,
+        looseness: Double = 1,
+        slant: Double = 0,
+        dryTime: TimeInterval = Pen.dryTime,
         onDone: (() -> Void)? = nil
     ) {
         self.text = text
@@ -109,13 +122,16 @@ public struct Handwriting: View {
         self.haptics = haptics
         self.playful = playful
         self.seed = seed
+        self.looseness = looseness
+        self.slant = slant
+        self.dryTime = dryTime
         self.onDone = onDone
     }
 
     private var xHeight: CGFloat { size * Pen.xHeightPerSize * textScale }
 
     public var body: some View {
-        WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed) {
+        WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant) {
             TimelineView(.animation(paused: still)) { context in
                 Canvas { graphics, canvasSize in
                     let elapsed: TimeInterval = still ? .infinity : context.date.timeIntervalSince(began)
@@ -126,15 +142,15 @@ public struct Handwriting: View {
         .contentShape(Rectangle())
         .onTapGesture { finishNow() }
         .task(id: text) { await write() }
-        // The strokes mean nothing to VoiceOver; the words do.
+        // The strokes mean nothing to VoiceOver; the words do (without the marks that cross some of them out).
         .accessibilityElement()
-        .accessibilityLabel(text)
+        .accessibilityLabel(Hand.unstruck(text))
     }
 
     private func written(for width: CGFloat) -> Written {
-        let key = "\(text)|\(width)|\(xHeight)|\(speed)|\(playful)|\(seed)"
+        let key = "\(text)|\(width)|\(xHeight)|\(speed)|\(playful)|\(seed)|\(looseness)|\(slant)"
         if cache.key == key, let written = cache.written { return written }
-        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: speed, playful: playful, seed: seed)
+        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant)
         cache.key = key
         cache.written = written
         return written
@@ -148,12 +164,13 @@ public struct Handwriting: View {
             let progress = mark.duration > 0 ? min(1, age / mark.duration) : 1
             let eased = 1 - pow(1 - progress, 1.6)
             // 1 while the stroke is being made, 0 once it has dried.
-            let wet = max(0, 1 - (age - mark.duration) / Pen.dryTime)
+            let wet = dryTime > 0 ? min(1, max(0, 1 - (age - mark.duration) / dryTime)) : 0
             let path = eased < 1 ? mark.path.trimmedPath(from: 0, to: eased) : mark.path
             graphics.stroke(
                 path,
-                with: .color((mark.color ?? ink).opacity(mark.ink + (1 - mark.ink) * min(1, wet))),
-                style: StrokeStyle(lineWidth: mark.width, lineCap: .round, lineJoin: .round)
+                with: .color((mark.color ?? ink).opacity(mark.ink + (1 - mark.ink) * wet)),
+                // Wet ink stands a little proud of the paper, and sinks in as it dries.
+                style: StrokeStyle(lineWidth: mark.width * (1 + Pen.wetSpread * CGFloat(wet)), lineCap: .round, lineJoin: .round)
             )
         }
     }
@@ -163,7 +180,7 @@ public struct Handwriting: View {
     private func write() async {
         skipped = false
         // Timing does not depend on where the lines break, so any width will do here.
-        let plan = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: speed, playful: playful, seed: seed)
+        let plan = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant)
         if reduceMotion || speed <= 0 || plan.marks.isEmpty {
             still = true
             onDone?()
@@ -184,7 +201,7 @@ public struct Handwriting: View {
         onDone?()
 
         // Let the last strokes dry, then stop redrawing.
-        if !skipped { await sleep(until: plan.duration + Pen.dryTime + 0.1) }
+        if !skipped { await sleep(until: plan.duration + dryTime + 0.1) }
         if !Task.isCancelled { still = true }
     }
 
