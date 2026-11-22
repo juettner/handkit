@@ -54,13 +54,18 @@
 //  is not a letter at all: "a scribble" is for hearts and doodles, one of
 //  which sometimes follows a line.
 //
-//  The scribble entry can also make the app's icon: draw a heart, tap "make
-//  an icon of this", and send the picture to the Mac.
+//  The app's icon is drawn here too, as its own thing: "app icon", in the
+//  row of pictures. On that entry the square is the icon. What you draw,
+//  where you draw it and how thick the line is are what the icon will be,
+//  and a pale outline shows the corners iOS cuts off. "keep" it and "send
+//  the icon" hands over icon.png, the 1024 by 1024 picture Xcode wants. The
+//  drawing is kept in the hand under the name "app-icon" like any other
+//  picture, so it travels in hand.json and can be drawn again later.
 //
 //  The pen can change colour between strokes ("ink" or "colour", with the
 //  swatch choosing which colour), and each stroke remembers its own. That is
-//  how a letter stays in ink while its heart is red. The icon picture keeps
-//  the colours too.
+//  how a letter stays in ink while its heart is red. The icon keeps its
+//  colours too.
 //
 //  The row along the top jumps to anything: "scribble", then every letter.
 //
@@ -99,6 +104,16 @@ private enum Ruling {
     static var right: CGFloat { 0.5 + unit / 2 }
 }
 
+/// The app icon, as fractions of its side.
+private enum Icon {
+    /// The line: thick, so the icon still reads when it is small.
+    static let line: CGFloat = 0.045
+    /// How round iOS cuts the corners (near enough; the real shape is a touch squarer).
+    static let corner: CGFloat = 0.2237
+    /// The picture Xcode wants, in pixels.
+    static let pixels: CGFloat = 1024
+}
+
 public struct HandEditor: View {
     @Environment(\.dismiss) private var dismiss
     /// Regular means there is room to spare: an iPad, where the square can be larger for a Pencil.
@@ -110,6 +125,8 @@ public struct HandEditor: View {
     private let onClose: (() -> Void)?
     /// Named drawings the app wants drawn, listed even before they are.
     private let drawings: [String]
+    /// Whether the page asks for the app's icon.
+    private let asksForIcon: Bool
 
     @State private var index = 0
     /// Finished strokes of the letter being drawn, in fractions of the square.
@@ -135,7 +152,7 @@ public struct HandEditor: View {
     /// What is typed on the "a drawing, by name" line.
     @State private var naming = ""
     @State private var fileNote: String? = nil
-    /// The icon picture made from the square, once there is one to send.
+    /// The icon picture made from a kept drawing of it, once there is one to send.
     @State private var iconURL: URL? = nil
 
     /// Everything the page asks for, in the order it asks: small letters, the
@@ -151,6 +168,9 @@ public struct HandEditor: View {
     ///   - drawings: names of pictures your app uses (see `Hand.drawings(named:)`).
     ///     They get a row of their own at the top, waiting to be drawn, with
     ///     hyphens shown as spaces. Left empty, the page has a line for typing a name.
+    ///   - icon: whether the page asks for the app's icon: an "app icon" entry
+    ///     in the row of pictures, where the square is the icon. Turn it off
+    ///     if people using your app can reach this page.
     ///   - onClose: what "back" does. Left out, it dismisses the page (pops it
     ///     off a NavigationStack, or closes the sheet it was shown in).
     @MainActor
@@ -159,9 +179,11 @@ public struct HandEditor: View {
         style: HandStyle = .journal,
         sample: String = "the quick brown fox jumps over the lazy dog",
         drawings: [String] = [],
+        icon: Bool = true,
         onClose: (() -> Void)? = nil
     ) {
         self.drawings = drawings
+        self.asksForIcon = icon
         _hands = ObservedObject(wrappedValue: store)
         self.style = style
         self.sample = sample
@@ -173,7 +195,11 @@ public struct HandEditor: View {
     /// then the named drawings (their keys sort after every letter).
     private var all: [String] {
         let saved = hands.hand.glyphs.keys.filter { $0.count > 1 }
-        return Self.characters + Set(saved).union(added).union(drawings.map { Hand.drawingKey($0) }).sorted()
+        return Self.characters + Set(saved).union(added).union(asked).sorted()
+    }
+    /// The keys of the pictures the page asks for: the app's, in its order, then the icon.
+    private var asked: [String] {
+        drawings.map { Hand.drawingKey($0) } + (asksForIcon ? [Hand.drawingKey(Hand.icon)] : [])
     }
     private var character: String { all[min(index, all.count - 1)] }
     private var drawnCount: Int { Self.characters.filter { !(hands.hand.glyphs[$0] ?? []).isEmpty }.count }
@@ -186,13 +212,21 @@ public struct HandEditor: View {
     private var drawingName: String? { Hand.drawingName(of: character) }
     /// A scribble or a named drawing: any size, anywhere, no guides.
     private var isFreeform: Bool { isScribble || drawingName != nil }
+    /// The app's icon: a picture, but one whose place and size in the square are kept.
+    private var isIcon: Bool { drawingName == Hand.icon }
+    /// The drawing the icon is made from: the one picked in the row, or else
+    /// the one kept last. Nil anywhere but on the icon's entry.
+    private var iconGlyph: Glyph? {
+        guard isIcon, let kept = hands.hand.glyphs[character], !kept.isEmpty else { return nil }
+        if let picked, kept.indices.contains(picked) { return kept[picked] }
+        return kept.last
+    }
     /// What an entry is called on the page: its name for a drawing, itself otherwise.
     private func label(_ entry: String) -> String {
         Hand.drawingName(of: entry)?.replacingOccurrences(of: "-", with: " ") ?? entry
     }
     /// The keys of every picture: the ones the app asked for, in its order, then any others in the hand.
     private var pictures: [String] {
-        let asked = drawings.map { Hand.drawingKey($0) }
         let others = Set(hands.hand.glyphs.keys).union(added).filter { Hand.drawingName(of: $0) != nil && !asked.contains($0) }
         return asked + others.sorted()
     }
@@ -264,6 +298,12 @@ public struct HandEditor: View {
                 fileNote = "That file is not a hand."
             }
         }
+        // The icon picture follows the drawing it is made from: written when one
+        // is kept or another is tapped, gone on leaving the icon's entry.
+        // (`initial: true` also runs this once when the page first appears.)
+        .onChange(of: iconGlyph, initial: true) { _, glyph in
+            iconURL = glyph.flatMap { writeIcon($0) }
+        }
         .onAppear {
             // Start at the first character that has not been drawn yet.
             if let first = Self.characters.firstIndex(where: { (hands.hand.glyphs[$0] ?? []).isEmpty }) {
@@ -334,26 +374,32 @@ public struct HandEditor: View {
             }
 
             // The app's icon is a picture file, not something drawn while the app
-            // runs, so the drawing in the square is turned into that picture here.
-            // Always there on the scribble entry, and only dimmed while the square
-            // is empty: a row that appeared with the first stroke moved the page
-            // under the pen and spoiled the drawing.
-            if isScribble {
+            // runs, so a kept drawing of it is turned into that picture and sent
+            // from here. The word is always there on the icon's entry, dimmed
+            // until a drawing is kept: a row that came and went would move the
+            // page under the pen.
+            if isIcon {
                 HStack(spacing: 24) {
-                    Word("make an icon of this", tone: .grey, disabled: blank) { iconURL = makeIcon() }
                     if let iconURL {
                         ShareLink(item: iconURL) {
                             Text("send the icon")
                                 .font(style.font(TypeSize.word))
                                 .foregroundStyle(style.ink)
                                 .frame(minHeight: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(PressedStyle())
+                        .accessibilityLabel("Send the icon as a picture")
+                    } else {
+                        Word("send the icon", tone: .grey, disabled: true) {}
                     }
+                    Spacer()
                 }
             }
 
-            Small(drawingName != nil
+            Small(isIcon
+                ? "The app's icon. The square is the icon: what you draw, where you draw it, as thick as you see it. The pale outline is where the corners are cut off. Keep it, then send the icon; it replaces icon.png in the app's AppIcon.appiconset. Keep more than one and the one you tap in the row is the one sent."
+                : drawingName != nil
                 ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen to colour for part of it. Draw it more than once with again and the app can vary them."
                 : isScribble
                 ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
@@ -480,7 +526,16 @@ public struct HandEditor: View {
     /// like a letter-sized blob. A picture or a scribble fills the box.
     @ViewBuilder
     private func thumbnail(_ glyph: Glyph) -> some View {
-        if isFreeform {
+        if isIcon {
+            // The icon as it will be: placed as drawn, corners cut.
+            Canvas { graphics, size in
+                drawIcon(glyph, side: size.width) { path, color, line in
+                    graphics.stroke(path, with: .color(color), style: line)
+                }
+            }
+            .background(style.paper)
+            .clipShape(RoundedRectangle(cornerRadius: Icon.corner * Self.thumb, style: .continuous))
+        } else if isFreeform {
             GlyphView(glyph, ink: style.ink)
                 .padding(4)
         } else {
@@ -545,7 +600,6 @@ public struct HandEditor: View {
 
     /// Jumps to one entry, with an empty square.
     private func go(to entry: String) {
-        iconURL = nil
         strokes = []
         inks = []
         current = []
@@ -558,12 +612,24 @@ public struct HandEditor: View {
             let side = geometry.size.width
             Canvas { graphics, size in
                 let s = size.width
-                let rules: [(y: CGFloat, color: Color, dash: [CGFloat])] = [
+                // An icon is not written on lines: its square shows the shape iOS
+                // cuts it to, and a small cross at the middle to centre against.
+                let rules: [(y: CGFloat, color: Color, dash: [CGFloat])] = isIcon ? [] : [
                     (Ruling.tall, style.rule, []),
                     (Ruling.middle, style.faint, [4, 6]),
                     (Ruling.baseline, style.grey, []),
                     (Ruling.tail, style.rule, []),
                 ]
+                if isIcon {
+                    let edge = Path(roundedRect: CGRect(x: 0, y: 0, width: s, height: s), cornerRadius: Icon.corner * s, style: .continuous)
+                    graphics.stroke(edge, with: .color(style.faint), lineWidth: 1)
+                    var cross = Path()
+                    cross.move(to: CGPoint(x: s / 2 - 8, y: s / 2))
+                    cross.addLine(to: CGPoint(x: s / 2 + 8, y: s / 2))
+                    cross.move(to: CGPoint(x: s / 2, y: s / 2 - 8))
+                    cross.addLine(to: CGPoint(x: s / 2, y: s / 2 + 8))
+                    graphics.stroke(cross, with: .color(style.faint), lineWidth: 1)
+                }
                 for rule in rules {
                     var path = Path()
                     path.move(to: CGPoint(x: 0, y: rule.y * s))
@@ -571,8 +637,9 @@ public struct HandEditor: View {
                     graphics.stroke(path, with: .color(rule.color), style: StrokeStyle(lineWidth: 1, dash: rule.dash))
                 }
 
-                // The pen is as thick here, against the ruling, as it will be on the page.
-                let nib = Pen.nib * Ruling.unit * s
+                // The pen is as thick here, against the ruling, as it will be on the
+                // page; on the icon's square, as thick as it will be on the icon.
+                let nib = isIcon ? Icon.line * s : Pen.nib * Ruling.unit * s
 
                 // The lighter guides are for letters. A scribble or a picture is any size, anywhere.
                 if !isFreeform {
@@ -666,14 +733,18 @@ public struct HandEditor: View {
     /// Saves what is in the square as one drawing of the current character.
     private func keep(advance: Bool) {
         let points = strokes.flatMap { $0 }
-        guard let left = points.map(\.x).min(), let right = points.map(\.x).max() else { return }
+        guard let inkLeft = points.map(\.x).min(), let right = points.map(\.x).max() else { return }
+        // A letter is measured from its own left edge, so where it sat in the
+        // square is forgotten. The icon is measured from the square's edge:
+        // where it sits is part of the drawing.
+        let left = isIcon ? 0 : inkLeft
         func rounded(_ value: CGFloat) -> Double { (Double(value) * 1000).rounded() / 1000 }
         let flat = strokes.map { stroke in
             stroke.flatMap { [rounded(($0.x - left) / Ruling.unit), rounded(($0.y - Ruling.baseline) / Ruling.unit)] }
         }
         let glyph = Glyph(
             strokes: flat,
-            advance: max(0.12, rounded((right - left) / Ruling.unit)),
+            advance: max(0.12, rounded((right - inkLeft) / Ruling.unit)),
             colors: inks.contains { $0 >= 0 } ? inks : nil
         )
         hands.add(glyph, for: character)
@@ -681,7 +752,8 @@ public struct HandEditor: View {
         strokes = []
         inks = []
         current = []
-        if advance {
+        // The icon stays where it is on "keep": the next thing to do is send it.
+        if advance && !isIcon {
             move(1)
         } else {
             // The drawing just kept is picked, so "occasional" or "rare" is one tap away.
@@ -689,42 +761,47 @@ public struct HandEditor: View {
         }
     }
 
-    /// Turns the drawing in the square into the app icon: a 1024 by 1024 PNG,
-    /// white paper, the drawing in ink, centred, with the thick line an icon
-    /// needs to read when it is small. Saved as icon.png, so it can replace
-    /// the file of that name in the app's AppIcon.appiconset as it is.
-    private func makeIcon() -> URL? {
-        let points = strokes.flatMap { $0 }
-        guard let left = points.map(\.x).min(), let right = points.map(\.x).max(),
-              let top = points.map(\.y).min(), let bottom = points.map(\.y).max() else { return nil }
-        let side: CGFloat = 1024
-        // The drawing fills a little over half the icon, whatever size it was drawn.
-        let scale = side * 0.56 / max(right - left, bottom - top, 0.01)
-        let midX = (left + right) / 2
-        let midY = (top + bottom) / 2
+    /// Draws a kept icon in a square of the given side, exactly as it was
+    /// drawn in the editor's square: same place, same size, same thickness.
+    /// `keep` stored the points in x-heights from the square's left edge and
+    /// the baseline; this turns them back into fractions of the square. The
+    /// caller does the stroking, so the row of small ones (a SwiftUI Canvas)
+    /// and the picture file (Core Graphics) share the one layout.
+    private func drawIcon(_ glyph: Glyph, side: CGFloat, stroke: (Path, Color, StrokeStyle) -> Void) {
+        let line = StrokeStyle(lineWidth: Icon.line * side, lineCap: .round, lineJoin: .round)
+        for (number, points) in glyph.points.enumerated() where !points.isEmpty {
+            let placed = points.map {
+                CGPoint(x: $0.x * Ruling.unit * side, y: (Ruling.baseline + $0.y * Ruling.unit) * side)
+            }
+            stroke(Written.smooth(placed), glyph.color(of: number) ?? style.ink, line)
+        }
+    }
 
+    /// Writes a kept icon drawing as the picture Xcode wants: a 1024 by 1024
+    /// PNG, the page's paper behind it, each stroke in its own colour. Saved as
+    /// icon.png, so it can replace the file of that name in the app's
+    /// AppIcon.appiconset as it is. The corners are left square: iOS cuts them.
+    private func writeIcon(_ glyph: Glyph) -> URL? {
         // An icon may not be see-through, and must be exactly this many pixels.
         let format = UIGraphicsImageRendererFormat()
         format.opaque = true
         format.scale = 1
-        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { context in
+        let size = CGSize(width: Icon.pixels, height: Icon.pixels)
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
             UIColor(style.paper).setFill()
-            context.fill(CGRect(x: 0, y: 0, width: side, height: side))
+            context.fill(CGRect(origin: .zero, size: size))
             let pen = context.cgContext
-            pen.setLineWidth(side * 0.05)
             pen.setLineCap(.round)
             pen.setLineJoin(.round)
-            // One stroke at a time, each in the colour it was drawn in.
-            for (number, stroke) in strokes.enumerated() {
-                let placed = stroke.map { CGPoint(x: side / 2 + ($0.x - midX) * scale, y: side / 2 + ($0.y - midY) * scale) }
-                pen.setStrokeColor(UIColor(strokeColor(number)).cgColor)
-                pen.addPath(Written.smooth(placed).cgPath)
+            drawIcon(glyph, side: Icon.pixels) { path, color, line in
+                pen.setLineWidth(line.lineWidth)
+                pen.setStrokeColor(UIColor(color).cgColor)
+                pen.addPath(path.cgPath)
                 pen.strokePath()
             }
         }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("icon.png")
         guard let data = image.pngData(), (try? data.write(to: url, options: .atomic)) != nil else { return nil }
-        Haptic.success()
         return url
     }
 
@@ -755,7 +832,6 @@ public struct HandEditor: View {
     }
 
     private func move(_ step: Int) {
-        iconURL = nil
         strokes = []
         inks = []
         current = []
