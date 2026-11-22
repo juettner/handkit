@@ -146,6 +146,13 @@ public struct Hand: Codable, Equatable {
     /// Unicode's private use area), so the pen never mistakes one for text.
     public static let drawingPrefix = "\u{E000}"
 
+    /// The name the app's icon is kept under. It is a named drawing like any
+    /// other, drawn on the drawing page's "app icon" entry, with one
+    /// difference: its points are measured from the left edge of the square
+    /// it was drawn in, not from the left edge of its own ink, so its place
+    /// in the icon is kept as well as its shape.
+    public static let icon = "app-icon"
+
     /// The key a named drawing is kept under.
     public static func drawingKey(_ name: String) -> String { drawingPrefix + name }
 
