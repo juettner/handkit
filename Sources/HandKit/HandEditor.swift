@@ -809,35 +809,36 @@ public struct HandEditor: View {
     }
 }
 
-// MARK: - The page's own small views
+// MARK: - The pages' own small views
 //
-// Private to this file, so they cannot clash with an app's views of the same
-// name. They read the style from the environment, which HandEditor sets.
+// Shared with SignaturePad. They are internal (no `public`), so an app never
+// sees them and they cannot clash with an app's views of the same name. They
+// read the style from the environment, which each page sets.
 
 private struct HandStyleKey: EnvironmentKey {
     static let defaultValue = HandStyle.journal
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var handStyle: HandStyle {
         get { self[HandStyleKey.self] }
         set { self[HandStyleKey.self] = newValue }
     }
 }
 
-private enum TypeSize {
+enum TypeSize {
     static let question: CGFloat = 30
     static let body: CGFloat = 19
     static let word: CGFloat = 15
     static let small: CGFloat = 13
 }
 
-private enum WordTone {
+enum WordTone {
     case ink, grey, faint
 }
 
 /// A word you can tap. The page has no buttons: actions are words.
-private struct Word: View {
+struct Word: View {
     @Environment(\.handStyle) private var style
     let title: String
     var tone: WordTone = .ink
@@ -883,7 +884,7 @@ private struct Word: View {
 }
 
 /// Small grey text: a count, a hint.
-private struct Small: View {
+struct Small: View {
     @Environment(\.handStyle) private var style
     let text: String
 
@@ -930,7 +931,7 @@ private struct Line: View {
 }
 
 /// Dims a word while the finger is on it. No background, no shape: it is just a word.
-private struct PressedStyle: ButtonStyle {
+struct PressedStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.6 : 1)

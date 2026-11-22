@@ -130,4 +130,51 @@ final class HandTests: XCTestCase {
         XCTAssertGreaterThan(rare, 0)
         print("usual \(usual), occasional \(occasional), rare \(rare) of 4000")
     }
+
+    // MARK: - Signing
+
+    /// A signature two x-heights wide that reaches three above its line and one below.
+    private var signature: Glyph {
+        Glyph(strokes: [[0, -3, 2, 1]], advance: 2)
+    }
+
+    func testASignatureIsPutUnderTheWritingAndAfterIt() {
+        let plain = Written("hi", hand: hand("h", "i"), xHeight: 10, width: 500, lettersPerSecond: 10, playful: false)
+        let signed = Written("hi", hand: hand("h", "i"), xHeight: 10, width: 500, lettersPerSecond: 10, playful: false, signatures: [signature])
+        XCTAssertEqual(signed.marks.count, plain.marks.count + 1)
+        // Its ink starts below the room the writing took, and the page grows to hold it.
+        let ink = signed.marks.last!.path.boundingRect
+        XCTAssertGreaterThanOrEqual(ink.minY, plain.size.height)
+        XCTAssertGreaterThan(signed.size.height, ink.maxY)
+        // The pen signs after the last letter, and takes longer over it.
+        XCTAssertGreaterThan(signed.marks.last!.start, signed.marks[plain.marks.count - 1].start)
+        XCTAssertGreaterThan(signed.duration, plain.duration)
+    }
+
+    func testASignatureCanStandAlone() {
+        let alone = Written("", hand: Hand(), xHeight: 10, width: 500, lettersPerSecond: 10, signatures: [signature])
+        XCTAssertEqual(alone.marks.count, 1)
+        XCTAssertEqual(alone.size.width, 20, accuracy: 0.001)
+        // Four x-heights of ink and the thickness of the pen above and below.
+        XCTAssertEqual(alone.size.height, 40 + 2 * Pen.nib * 10, accuracy: 0.001)
+        XCTAssertGreaterThan(alone.duration, 0)
+    }
+
+    func testASignatureShrinksToFitANarrowPage() {
+        let narrow = Written("", hand: Hand(), xHeight: 10, width: 10, lettersPerSecond: 10, signatures: [signature])
+        XCTAssertEqual(narrow.size.width, 10, accuracy: 0.001)
+    }
+
+    func testTheSameNoteIsAlwaysSignedTheSameWayAndTheLettersAreUntouched() {
+        let two = [signature, Glyph(strokes: [[0, 0, 5, 0]], advance: 5)]
+        func write(_ signatures: [Glyph]) -> Written {
+            Written("hi", hand: hand("h", "i"), xHeight: 10, width: 500, lettersPerSecond: 10, signatures: signatures)
+        }
+        XCTAssertEqual(write(two).size, write(two).size)
+        // The letters are placed exactly as they are with no signature at all.
+        let plain = write([])
+        XCTAssertEqual(write(two).marks.prefix(plain.marks.count).map(\.path.boundingRect), plain.marks.map(\.path.boundingRect))
+        // An empty drawing is not a signature.
+        XCTAssertEqual(write([Glyph(strokes: [], advance: 1)]).marks.count, plain.marks.count)
+    }
 }
