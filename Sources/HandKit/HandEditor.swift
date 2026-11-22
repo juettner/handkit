@@ -148,9 +148,9 @@ public struct HandEditor: View {
     ///   - store: where the drawings are kept. The shared store unless you keep more than one hand.
     ///   - style: the page's colours and typeface.
     ///   - sample: the sentence "try it" writes.
-    ///   - drawings: names of pictures your app uses (see `Hand.drawings(named:)`),
-    ///     so they are in the list waiting to be drawn. Any name can also be
-    ///     typed on the page itself.
+    ///   - drawings: names of pictures your app uses (see `Hand.drawings(named:)`).
+    ///     They get a row of their own at the top, waiting to be drawn, with
+    ///     hyphens shown as spaces. Left empty, the page has a line for typing a name.
     ///   - onClose: what "back" does. Left out, it dismisses the page (pops it
     ///     off a NavigationStack, or closes the sheet it was shown in).
     @MainActor
@@ -187,7 +187,15 @@ public struct HandEditor: View {
     /// A scribble or a named drawing: any size, anywhere, no guides.
     private var isFreeform: Bool { isScribble || drawingName != nil }
     /// What an entry is called on the page: its name for a drawing, itself otherwise.
-    private func label(_ entry: String) -> String { Hand.drawingName(of: entry) ?? entry }
+    private func label(_ entry: String) -> String {
+        Hand.drawingName(of: entry)?.replacingOccurrences(of: "-", with: " ") ?? entry
+    }
+    /// The keys of every picture: the ones the app asked for, in its order, then any others in the hand.
+    private var pictures: [String] {
+        let asked = drawings.map { Hand.drawingKey($0) }
+        let others = Set(hands.hand.glyphs.keys).union(added).filter { Hand.drawingName(of: $0) != nil && !asked.contains($0) }
+        return asked + others.sorted()
+    }
     /// "drawn 3 times, 1 of them rare"
     private var drawnNote: String {
         if timesDrawn == 0 { return "not drawn yet" }
@@ -254,6 +262,9 @@ public struct HandEditor: View {
     private var drawing: some View {
         VStack(alignment: .leading, spacing: 0) {
             strip
+            if !pictures.isEmpty {
+                pictureRow
+            }
             HStack(alignment: .firstTextBaseline, spacing: 16) {
                 Text(isScribble ? "a scribble" : label(character))
                     .font(style.font(isFreeform ? TypeSize.body : TypeSize.question))
@@ -343,7 +354,10 @@ public struct HandEditor: View {
                 Word("draw", tone: .grey, disabled: joining.trimmingCharacters(in: .whitespaces).count < 2, action: join)
                     .accessibilityLabel("Draw these joined letters")
             }
-            // A picture the app shows by name. Name it here, then draw it like any other.
+            // A picture the app shows by name. An app that says which pictures it
+            // uses (the `drawings` parameter) has them in the row at the top, and
+            // this line is left out: typing a name is one more thing to get wrong.
+            if drawings.isEmpty {
             HStack(alignment: .lastTextBaseline, spacing: 16) {
                 Small("a drawing, by name")
                 Line(placeholder: "envelope", text: $naming, size: TypeSize.word, capitalization: .never, autocorrect: false, onSubmit: name)
@@ -351,6 +365,29 @@ public struct HandEditor: View {
                     .accessibilityLabel("The name of a drawing")
                 Word("draw", tone: .grey, disabled: naming.trimmingCharacters(in: .whitespaces).isEmpty, action: name)
                     .accessibilityLabel("Draw a picture with this name")
+            }
+            }
+        }
+    }
+
+    /// The pictures the app uses, by name, always in view like the alphabet
+    /// above them: ink is where you are, dark grey has been drawn, pale grey
+    /// has not. Nobody has to type a name and get it right.
+    private var pictureRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 20) {
+                ForEach(pictures, id: \.self) { entry in
+                    Button { go(to: entry) } label: {
+                        Text(label(entry))
+                            .font(style.font(TypeSize.small))
+                            .foregroundStyle(entry == character ? style.ink : hasDrawing(entry) ? style.muted : style.faint)
+                            .underline(entry == character, color: style.ink)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressedStyle())
+                    .accessibilityLabel("Draw \(label(entry))")
+                }
             }
         }
     }
@@ -466,7 +503,8 @@ public struct HandEditor: View {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
-                        ForEach(all.filter { $0 != Hand.scribble }, id: \.self) { entry in
+                        // Pictures have their own row, below.
+                        ForEach(all.filter { $0 != Hand.scribble && Hand.drawingName(of: $0) == nil }, id: \.self) { entry in
                             Button { go(to: entry) } label: {
                                 Text(label(entry))
                                     .font(style.font(TypeSize.body))

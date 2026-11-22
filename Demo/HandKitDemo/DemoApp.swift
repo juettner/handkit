@@ -42,6 +42,9 @@ struct DemoView: View {
 
     private let style = HandStyle.journal
 
+    /// Pictures kept in the hand beside the letters. P.S. shows these two as its envelopes.
+    static let pictures = ["envelope-sealed", "envelope-open"]
+
     var body: some View {
         ZStack {
             style.paper.ignoresSafeArea()
@@ -84,7 +87,9 @@ struct DemoView: View {
         }
         // A page that slides up over this one. HandEditor's "back" closes it.
         .fullScreenCover(isPresented: $drawing) {
-            HandEditor(style: style)
+            // The pictures the apps using this hand need, so they are on the page
+            // ready to draw. Add a name here when an app needs another.
+            HandEditor(style: style, drawings: DemoView.pictures)
         }
     }
 
