@@ -224,6 +224,21 @@ public struct HandEditor: View {
                     }
                     Spacer()
                     Small("\(drawnCount) of \(Self.characters.count) drawn")
+                    // Always in reach, at the top: this is how the hand leaves the
+                    // device (AirDrop, Files, Mail) to be shipped inside an app.
+                    ShareLink(item: hands.fileURL) {
+                        Text("send my hand")
+                            .font(style.font(TypeSize.small))
+                            .foregroundStyle(style.ink)
+                            .underline()
+                            .frame(minHeight: 44)
+                            .padding(.leading, 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressedStyle())
+                    .disabled(hands.hand.isEmpty)
+                    .opacity(hands.hand.isEmpty ? 0.45 : 1)
+                    .accessibilityLabel("Send my hand as a file")
                 }
                 .frame(minHeight: 24)
 
