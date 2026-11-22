@@ -87,6 +87,62 @@ final class HandTests: XCTestCase {
         XCTAssertEqual(written.wordStarts.count, 1)
     }
 
+    func testCrossingOutMarksAreCutOutOfTheText() {
+        let parts = Hand.struck("you looked ~~nice~~ incredible")
+        XCTAssertEqual(parts.map(\.text), ["you looked ", "nice", " incredible"])
+        XCTAssertEqual(parts.map(\.struck), [false, true, false])
+        XCTAssertEqual(Hand.unstruck("you looked ~~nice~~ incredible"), "you looked nice incredible")
+        // A mark that never closes is not a mark.
+        XCTAssertEqual(Hand.struck("almost ~~there").map(\.text), ["almost ~~there"])
+        XCTAssertEqual(Hand.struck("~~a~~ b ~~c").map(\.struck), [true, false])
+        XCTAssertEqual(Hand.unstruck("no marks at all"), "no marks at all")
+        XCTAssertTrue(Hand.struck("").isEmpty)
+    }
+
+    func testTheMarksAreNotLettersTheHandIsMissing() {
+        let h = hand("a", "b")
+        XCTAssertEqual(h.missing(in: "a ~~b~~ a"), [])
+        XCTAssertTrue(h.covers("a ~~b~~ a"))
+    }
+
+    func testWordsKnowWhichOfThemAreCrossedOutAndWhereLinesBreak() {
+        let cut = Written.words(of: "aa ~~bb cc~~ dd\nee")
+        XCTAssertEqual(cut.words, ["aa", "bb", "cc", "dd", "ee"])
+        XCTAssertEqual(cut.struck, [1, 2])
+        XCTAssertEqual(cut.breaks, [4])
+        // Crossed out in part is crossed out.
+        XCTAssertEqual(Written.words(of: "un~~do~~").struck, [0])
+        XCTAssertEqual(Written.words(of: "\n\naa  \n bb").breaks, [1])
+    }
+
+    func testACrossedOutWordIsWrittenAndThenStruckThrough() {
+        let h = hand("a", "b")
+        let plain = Written("aa bb", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        let struck = Written("~~aa~~ bb", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        // One more stroke: the line through it. The page is no bigger for it.
+        XCTAssertEqual(struck.marks.count, plain.marks.count + 1)
+        XCTAssertEqual(struck.size, plain.size)
+        XCTAssertEqual(struck.wordStarts.count, 2)
+        // The line is drawn after the word it crosses out and before the next word starts.
+        let line = struck.marks[2]
+        XCTAssertGreaterThan(line.start, struck.marks[1].start)
+        XCTAssertLessThan(line.start, struck.marks[3].start)
+        // Two words crossed out together share one line; on two rows they need two.
+        let together = Written("~~aa bb~~", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        XCTAssertEqual(together.marks.count, plain.marks.count + 1)
+        let wrapped = Written("~~aa bb~~", hand: h, xHeight: 10, width: 30, lettersPerSecond: 15, playful: false)
+        XCTAssertEqual(wrapped.marks.count, plain.marks.count + 2)
+    }
+
+    func testLoosenessAndSlantChangeTheMoodNotTheLayout() {
+        let h = hand("a")
+        let usual = Written("aa aa", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        let hurried = Written("aa aa", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false, looseness: 1.6, slant: 0.15)
+        XCTAssertEqual(usual.size, hurried.size)
+        XCTAssertEqual(usual.marks.count, hurried.marks.count)
+        XCTAssertEqual(usual.duration, hurried.duration, accuracy: 0.0001)
+    }
+
     func testNamedDrawingsAreKeptApartFromWriting() {
         var h = hand("a", "b")
         h.glyphs[Hand.drawingKey("envelope-sealed")] = [stroke(), stroke()]
@@ -158,6 +214,45 @@ final class HandTests: XCTestCase {
         // Four x-heights of ink and the thickness of the pen above and below.
         XCTAssertEqual(alone.size.height, 40 + 2 * Pen.nib * 10, accuracy: 0.001)
         XCTAssertGreaterThan(alone.duration, 0)
+    }
+
+    // MARK: - Line thickness
+
+    func testAStrokeKeepsTheLineItWasDrawnWith() throws {
+        // Two strokes: the first bold, the second in the usual line.
+        let bold = Glyph(strokes: [[0, 0, 1, 0], [0, -1, 1, -1]], advance: 1, widths: [2, 1])
+        XCTAssertEqual(bold.width(of: 0), 2)
+        XCTAssertEqual(bold.width(of: 1), 1)
+        XCTAssertEqual(bold.thickest, 2)
+        // It travels in the file, and the pen writes with it.
+        let h = Hand(glyphs: ["a": [bold]])
+        let back = try XCTUnwrap(Hand(data: try XCTUnwrap(h.data())))
+        XCTAssertEqual(back, h)
+        let written = Written("a", hand: back, xHeight: 10, width: 500, lettersPerSecond: 10, playful: false)
+        XCTAssertEqual(written.marks.count, 2)
+        XCTAssertEqual(written.marks[0].width, written.marks[1].width * 2, accuracy: 0.001)
+    }
+
+    func testADrawingWithNoWidthsIsInTheUsualLine() throws {
+        // A file from before line thickness existed.
+        let old = try XCTUnwrap(Hand(data: Data(#"{"glyphs":{"a":[{"strokes":[[0,0,1,0]],"advance":1}]}}"#.utf8)))
+        let glyph = try XCTUnwrap(old.glyphs["a"]?.first)
+        XCTAssertNil(glyph.widths)
+        XCTAssertEqual(glyph.width(of: 0), 1)
+        XCTAssertEqual(glyph.thickest, 1)
+        // And nothing about thickness is written back into it.
+        XCTAssertFalse(String(decoding: try XCTUnwrap(old.data()), as: UTF8.self).contains("widths"))
+        // A list that is too short, or holds nonsense, falls back to the usual line.
+        let odd = Glyph(strokes: [[0, 0, 1, 0], [0, 0, 1, 0]], advance: 1, widths: [0])
+        XCTAssertEqual(odd.width(of: 0), 1)
+        XCTAssertEqual(odd.width(of: 1), 1)
+    }
+
+    func testABoldSignatureIsGivenTheRoomItsLineTakes() {
+        let bold = Glyph(strokes: [[0, -3, 2, 1]], advance: 2, widths: [2])
+        let alone = Written("", hand: Hand(), xHeight: 10, width: 500, lettersPerSecond: 10, signatures: [bold])
+        XCTAssertEqual(alone.marks[0].width, 2 * Pen.nib * 10, accuracy: 0.001)
+        XCTAssertEqual(alone.size.height, 40 + 2 * 2 * Pen.nib * 10, accuracy: 0.001)
     }
 
     func testASignatureShrinksToFitANarrowPage() {

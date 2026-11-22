@@ -46,9 +46,9 @@ struct DemoView: View {
     private let style = HandStyle.journal
 
     /// Pictures kept in the hand beside the letters, in the order the drawing
-    /// page lists them. P.S. shows the first two as its envelopes and the other
+    /// page lists them. P.S. shows the first two as its envelopes and the last
     /// three in the strip at the top of its reader's page.
-    static let pictures = ["envelope-sealed", "envelope-open", "status-signal", "status-wifi", "status-battery"]
+    static let pictures = ["envelope-sealed", "envelope-open", "doodle", "status-signal", "status-wifi", "status-battery"]
     /// What the drawing page calls the ones whose names would read oddly.
     static let labels = ["status-signal": "signal", "status-wifi": "wifi", "status-battery": "battery"]
     /// The three P.S. draws in the strip at the top of its reader's page, at
