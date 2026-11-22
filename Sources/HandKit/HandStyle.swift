@@ -35,15 +35,17 @@ public struct HandStyle {
     /// The typeface for the page's own words, at a size in points.
     public var font: (CGFloat) -> Font
 
+    // The colours are spelled out as red, green and blue because a default
+    // value in a public initializer may only use things that are public too.
     public init(
-        paper: Color = Color(hex: 0xFFFFFF),
-        ink: Color = Color(hex: 0x1E1A17),
-        grey: Color = Color(hex: 0x9A9088),
-        muted: Color = Color(hex: 0x6B625A),
-        faint: Color = Color(hex: 0xC4BCB2),
-        rule: Color = Color(hex: 0xF1EEE9),
-        edge: Color = Color(hex: 0xE6E1DA),
-        heart: Color = Color(hex: 0xC8322B),
+        paper: Color = Color(red: 255 / 255, green: 255 / 255, blue: 255 / 255),
+        ink: Color = Color(red: 30 / 255, green: 26 / 255, blue: 23 / 255),
+        grey: Color = Color(red: 154 / 255, green: 144 / 255, blue: 136 / 255),
+        muted: Color = Color(red: 107 / 255, green: 98 / 255, blue: 90 / 255),
+        faint: Color = Color(red: 196 / 255, green: 188 / 255, blue: 178 / 255),
+        rule: Color = Color(red: 241 / 255, green: 238 / 255, blue: 233 / 255),
+        edge: Color = Color(red: 230 / 255, green: 225 / 255, blue: 218 / 255),
+        heart: Color = Color(red: 200 / 255, green: 50 / 255, blue: 43 / 255),
         font: @escaping (CGFloat) -> Font = { .system(size: $0, design: .serif) }
     ) {
         self.paper = paper
