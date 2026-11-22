@@ -98,6 +98,8 @@ private enum Ruling {
 
 public struct HandEditor: View {
     @Environment(\.dismiss) private var dismiss
+    /// Regular means there is room to spare: an iPad, where the square can be larger for a Pencil.
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @ObservedObject private var hands: HandStore
     private let style: HandStyle
     /// The sentence "try it" writes, as far as the letters drawn so far allow.
@@ -465,7 +467,7 @@ public struct HandEditor: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
-        .frame(maxWidth: 300)
+        .frame(maxWidth: sizeClass == .regular ? 520 : 300)
         .overlay(Rectangle().stroke(style.edge, lineWidth: 1))
         .accessibilityLabel("Drawing square for the character \(character)")
     }
