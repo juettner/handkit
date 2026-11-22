@@ -105,6 +105,8 @@ public struct HandEditor: View {
     /// The sentence "try it" writes, as far as the letters drawn so far allow.
     private let sample: String
     private let onClose: (() -> Void)?
+    /// Named drawings the app wants drawn, listed even before they are.
+    private let drawings: [String]
 
     @State private var index = 0
     /// Finished strokes of the letter being drawn, in fractions of the square.
@@ -125,6 +127,8 @@ public struct HandEditor: View {
     @State private var added: Set<String> = []
     /// What is typed on the "letters you join" line.
     @State private var joining = ""
+    /// What is typed on the "a drawing, by name" line.
+    @State private var naming = ""
     @State private var fileNote: String? = nil
     /// The icon picture made from the square, once there is one to send.
     @State private var iconURL: URL? = nil
@@ -139,6 +143,9 @@ public struct HandEditor: View {
     ///   - store: where the drawings are kept. The shared store unless you keep more than one hand.
     ///   - style: the page's colours and typeface.
     ///   - sample: the sentence "try it" writes.
+    ///   - drawings: names of pictures your app uses (see `Hand.drawings(named:)`),
+    ///     so they are in the list waiting to be drawn. Any name can also be
+    ///     typed on the page itself.
     ///   - onClose: what "back" does. Left out, it dismisses the page (pops it
     ///     off a NavigationStack, or closes the sheet it was shown in).
     @MainActor
@@ -146,8 +153,10 @@ public struct HandEditor: View {
         store: HandStore = .shared,
         style: HandStyle = .journal,
         sample: String = "the quick brown fox jumps over the lazy dog",
+        drawings: [String] = [],
         onClose: (() -> Void)? = nil
     ) {
+        self.drawings = drawings
         _hands = ObservedObject(wrappedValue: store)
         self.style = style
         self.sample = sample
@@ -155,16 +164,23 @@ public struct HandEditor: View {
         _colour = State(initialValue: style.heart)
     }
 
-    /// Everything that can be drawn: the fixed list, then your joined letters.
+    /// Everything that can be drawn: the fixed list, then your joined letters,
+    /// then the named drawings (their keys sort after every letter).
     private var all: [String] {
         let saved = hands.hand.glyphs.keys.filter { $0.count > 1 }
-        return Self.characters + Set(saved).union(added).sorted()
+        return Self.characters + Set(saved).union(added).union(drawings.map { Hand.drawingKey($0) }).sorted()
     }
     private var character: String { all[min(index, all.count - 1)] }
     private var drawnCount: Int { Self.characters.filter { !(hands.hand.glyphs[$0] ?? []).isEmpty }.count }
     private var timesDrawn: Int { hands.hand.glyphs[character]?.count ?? 0 }
     private var timesRare: Int { hands.hand.glyphs[character]?.filter(\.isRare).count ?? 0 }
     private var isScribble: Bool { character == Hand.scribble }
+    /// The name of the picture being drawn, when it is one and not writing.
+    private var drawingName: String? { Hand.drawingName(of: character) }
+    /// A scribble or a named drawing: any size, anywhere, no guides.
+    private var isFreeform: Bool { isScribble || drawingName != nil }
+    /// What an entry is called on the page: its name for a drawing, itself otherwise.
+    private func label(_ entry: String) -> String { Hand.drawingName(of: entry) ?? entry }
     /// "drawn 3 times, 1 of them rare"
     private var drawnNote: String {
         if timesDrawn == 0 { return "not drawn yet" }
@@ -231,8 +247,8 @@ public struct HandEditor: View {
         VStack(alignment: .leading, spacing: 0) {
             strip
             HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(isScribble ? "a scribble" : character)
-                    .font(style.font(isScribble ? TypeSize.body : TypeSize.question))
+                Text(isScribble ? "a scribble" : label(character))
+                    .font(style.font(isFreeform ? TypeSize.body : TypeSize.question))
                     .foregroundStyle(style.ink)
                 Small(drawnNote)
                 Spacer()
@@ -252,7 +268,7 @@ public struct HandEditor: View {
                     .accessibilityLabel("Keep this drawing and draw the same character once more")
                 // A drawing for now and then: a heart for the dot of an "i". A scribble
                 // is already occasional, so it has no rare kind.
-                if !isScribble {
+                if !isFreeform {
                     Word("rarely", disabled: blank) { keep(advance: false, rare: true) }
                         .accessibilityLabel("Keep this drawing as a rare one, used only now and then")
                 }
@@ -306,7 +322,9 @@ public struct HandEditor: View {
                 }
             }
 
-            Small(isScribble
+            Small(drawingName != nil
+                ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen to colour for part of it. Draw it more than once with again and the app can vary them."
+                : isScribble
                 ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
                 : "Draw it the way you write it, sitting on the line. Keep a drawing with rarely and it only turns up now and then, like a heart for a dot.")
                 .padding(.top, 8)
@@ -319,6 +337,15 @@ public struct HandEditor: View {
                     .accessibilityLabel("Letters you write joined")
                 Word("draw", tone: .grey, disabled: joining.trimmingCharacters(in: .whitespaces).count < 2, action: join)
                     .accessibilityLabel("Draw these joined letters")
+            }
+            // A picture the app shows by name. Name it here, then draw it like any other.
+            HStack(alignment: .lastTextBaseline, spacing: 16) {
+                Small("a drawing, by name")
+                Line(placeholder: "envelope", text: $naming, size: TypeSize.word, capitalization: .never, autocorrect: false, onSubmit: name)
+                    .frame(width: 150)
+                    .accessibilityLabel("The name of a drawing")
+                Word("draw", tone: .grey, disabled: naming.trimmingCharacters(in: .whitespaces).isEmpty, action: name)
+                    .accessibilityLabel("Draw a picture with this name")
             }
         }
     }
@@ -338,8 +365,9 @@ public struct HandEditor: View {
                     HStack(spacing: 0) {
                         ForEach(all.filter { $0 != Hand.scribble }, id: \.self) { entry in
                             Button { go(to: entry) } label: {
-                                Text(entry)
+                                Text(label(entry))
                                     .font(style.font(TypeSize.body))
+                                    .padding(.horizontal, entry.count > 1 ? 8 : 0)
                                     .foregroundStyle(entry == character ? style.ink : hasDrawing(entry) ? style.muted : style.faint)
                                     .underline(entry == character, color: style.ink)
                                     .frame(minWidth: 30, minHeight: 44)
@@ -347,7 +375,7 @@ public struct HandEditor: View {
                             }
                             .buttonStyle(PressedStyle())
                             .id(entry)
-                            .accessibilityLabel("Draw \(entry)")
+                            .accessibilityLabel("Draw \(label(entry))")
                         }
                     }
                 }
@@ -390,8 +418,8 @@ public struct HandEditor: View {
                 // The pen is as thick here, against the ruling, as it will be on the page.
                 let nib = Pen.nib * Ruling.unit * s
 
-                // The lighter guides are for letters. A scribble is any size, anywhere.
-                if !isScribble {
+                // The lighter guides are for letters. A scribble or a picture is any size, anywhere.
+                if !isFreeform {
                     // Two uprights one x-height apart. Joined letters are wider
                     // than that by nature, so they go without.
                     if character.count == 1 {
@@ -469,7 +497,7 @@ public struct HandEditor: View {
         .aspectRatio(1, contentMode: .fit)
         .frame(maxWidth: sizeClass == .regular ? 520 : 300)
         .overlay(Rectangle().stroke(style.edge, lineWidth: 1))
-        .accessibilityLabel("Drawing square for the character \(character)")
+        .accessibilityLabel("Drawing square for \(label(character))")
     }
 
     /// The colour a finished stroke in the square was drawn in.
@@ -548,6 +576,20 @@ public struct HandEditor: View {
         inks = []
         current = []
         index = all.firstIndex(of: letters) ?? index
+    }
+
+    /// Adds the name typed on the line to the list, as a picture, and goes to it.
+    /// Names are kept simple (small letters, digits, hyphens) so an app can ask for one without surprises.
+    private func name() {
+        let typed = naming.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "-" }
+        guard !typed.isEmpty else { return }
+        let key = Hand.drawingKey(String(typed.prefix(32)))
+        added.insert(key)
+        naming = ""
+        strokes = []
+        inks = []
+        current = []
+        index = all.firstIndex(of: key) ?? index
     }
 
     private func move(_ step: Int) {

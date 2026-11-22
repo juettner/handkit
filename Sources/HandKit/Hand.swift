@@ -114,6 +114,26 @@ public struct Hand: Codable, Equatable {
     /// character (a heart outline), so a text that contains it gets one too.
     public static let scribble = "\u{2661}"
 
+    /// Drawings that are not writing at all: a picture kept under a name, such
+    /// as "envelope-sealed". They live in the same file as the letters, are
+    /// drawn on the same page, and are shown with `GlyphView`. Their keys
+    /// start with this character, which no keyboard types (it is from
+    /// Unicode's private use area), so the pen never mistakes one for text.
+    public static let drawingPrefix = "\u{E000}"
+
+    /// The key a named drawing is kept under.
+    public static func drawingKey(_ name: String) -> String { drawingPrefix + name }
+
+    /// The name of a named drawing, given its key; nil if the key is for writing.
+    public static func drawingName(of key: String) -> String? {
+        key.hasPrefix(drawingPrefix) ? String(key.dropFirst(drawingPrefix.count)) : nil
+    }
+
+    /// Every drawing kept under a name. Empty if there are none.
+    public func drawings(named name: String) -> [Glyph] {
+        glyphs[Hand.drawingKey(name)] ?? []
+    }
+
     /// The drawings to use for a character, or nil if it has never been drawn.
     /// Curly quotes and long dashes use the plain ones, accents are dropped,
     /// and a missing capital borrows the small letter (and the other way round).
@@ -136,7 +156,8 @@ public struct Hand: Codable, Equatable {
     /// written with a gap than not at all.
     public func pieces(of word: String, skippingUnknown: Bool = false) -> [(drawings: [Glyph], count: Int)]? {
         let letters = Array(word.map { Hand.plain($0) }.joined())
-        let longest = glyphs.keys.map(\.count).max() ?? 1
+        // Named drawings are not writing, so their (long) keys are left out of the search for joined letters.
+        let longest = glyphs.keys.filter { !$0.hasPrefix(Hand.drawingPrefix) }.map(\.count).max() ?? 1
         var out: [(drawings: [Glyph], count: Int)] = []
         var at = 0
         while at < letters.count {

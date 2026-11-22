@@ -86,4 +86,15 @@ final class HandTests: XCTestCase {
         let written = Written("zz aa", hand: hand("a"), xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
         XCTAssertEqual(written.wordStarts.count, 1)
     }
+
+    func testNamedDrawingsAreKeptApartFromWriting() {
+        var h = hand("a", "b")
+        h.glyphs[Hand.drawingKey("envelope-sealed")] = [stroke(), stroke()]
+        XCTAssertEqual(h.drawings(named: "envelope-sealed").count, 2)
+        XCTAssertTrue(h.drawings(named: "nothing").isEmpty)
+        XCTAssertEqual(Hand.drawingName(of: Hand.drawingKey("envelope-sealed")), "envelope-sealed")
+        XCTAssertNil(Hand.drawingName(of: "th"))
+        // The long key must not be taken for joined letters.
+        XCTAssertEqual(h.pieces(of: "ab")?.map(\.count), [1, 1])
+    }
 }

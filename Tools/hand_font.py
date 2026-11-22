@@ -209,6 +209,9 @@ def build(hand: dict, pen: dict[str, float], family: str = "Hand"):
     usual: dict[str, list[Drawing]] = {}
     rare: dict[str, list[Drawing]] = {}
     for key, glyphs in hand.get("glyphs", {}).items():
+        # Named drawings (Hand.drawingPrefix) are pictures, not writing: a font has no use for them.
+        if key.startswith("\ue000"):
+            continue
         drawings = [d for d in (Drawing(g, pen) for g in glyphs) if d.contours]
         if not drawings:
             continue
