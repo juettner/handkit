@@ -71,6 +71,21 @@ public enum Pen {
     public static let signatureCare: Double = 4
     /// The space between the last line of writing and the top of the signature.
     public static let signatureGap: CGFloat = 0.6
+    /// Ink written in the rain runs: how far down the page, at most, and over how many seconds.
+    public static let runLength: CGFloat = 0.55
+    public static let runTime: TimeInterval = 5
+    /// Ink read in the sun has faded: how much of its darkness is left once it is dry.
+    public static let sunFade: Double = 0.5
+}
+
+/// What the weather has done to the ink.
+public enum Weathering: String, Sendable {
+    /// Nothing: ordinary ink.
+    case dry
+    /// The ink runs a little way down the page behind the pen, as it does on wet paper.
+    case rain
+    /// The ink dries pale, as if the page had been left on a windowsill.
+    case sun
 }
 
 /// One pen stroke, placed on the page and on the clock.
@@ -368,6 +383,13 @@ public struct Written {
         wordStarts = starts.map { $0 * seconds }
         duration = clock * seconds
         size = CGSize(width: widest, height: signedTo ?? baseline + Pen.descent * xHeight)
+    }
+
+    /// The moment up to which the pen may write when it is allowed `count`
+    /// words: the start of the word after them. All of time, once every word
+    /// is allowed. (A scribble and a signature each count as a word.)
+    public func moment(afterWords count: Int) -> TimeInterval {
+        count < wordStarts.count ? wordStarts[max(0, count)] : .infinity
     }
 
     /// A finger leaves a trail of points. Joining them with straight lines

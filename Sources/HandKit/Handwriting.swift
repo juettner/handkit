@@ -31,6 +31,17 @@
 //  must be complete (and show it another way when it is not), or
 //  `hand.missing(in:)` to say which characters those are.
 //
+//  Three things an app can ask of the pen beyond writing:
+//
+//    mirrored   the line is written backwards, right to left, to be read in
+//               a mirror.
+//    weather    what the sky has done to the ink (Weathering): in the rain it
+//               runs a little down the page, in the sun it dries pale.
+//    words      the pen is held: it writes only as many words as this, and
+//               waits, nib on the paper, until the number goes up. The app
+//               counts something (steps, say) and passes the count. While
+//               the pen is held a tap does not finish the line.
+//
 //  It can also sign. Give it `signatures` (drawings made on SignaturePad) and
 //  the pen puts one under the writing when the words are done. With an empty
 //  text and an empty hand it writes the signature alone, which is how an app
@@ -72,6 +83,33 @@ private struct WritingLayout: Layout {
     }
 }
 
+/// The clock of a pen that is being held (`words`). An ordinary clock would
+/// run on while the pen waits, and the next word would then appear all at
+/// once. This one only moves while the pen is allowed to: it is told the time
+/// on every frame, and stops at `limit`.
+///
+/// A class, so the drawing code and the task that waits for the pen share
+/// the one object (a struct would be copied into each).
+private final class PenClock {
+    /// Seconds the pen has spent writing.
+    private(set) var time: TimeInterval = 0
+    private var last: Date?
+    /// How many words the pen may write, as last told by the view.
+    var allowed = 0
+
+    func tick(_ now: Date, limit: TimeInterval) -> TimeInterval {
+        if let last { time += max(0, now.timeIntervalSince(last)) }
+        last = now
+        time = min(time, limit)
+        return time
+    }
+
+    func reset() {
+        time = 0
+        last = nil
+    }
+}
+
 /// Remembers the last line worked out, so a frame of animation does not redo it.
 private final class WrittenCache {
     var key = ""
@@ -102,6 +140,12 @@ public struct Handwriting: View {
     /// One person's signature, drawn one or more times (see SignaturePad). The
     /// pen signs under the writing with one of them. Empty for no signature.
     var signatures: [Glyph] = []
+    /// Written backwards, to be read in a mirror.
+    var mirrored = false
+    /// What the weather has done to the ink.
+    var weather: Weathering = .dry
+    /// How many words the pen may write so far, or nil for a pen that is not held.
+    var words: Int? = nil
     /// Called once the whole line is on the page (written or tapped through).
     var onDone: (() -> Void)? = nil
 
@@ -114,6 +158,7 @@ public struct Handwriting: View {
     /// True once the line was tapped through.
     @State private var skipped = false
     @State private var cache = WrittenCache()
+    @State private var hold = PenClock()
 
     public init(
         text: String,
@@ -128,6 +173,9 @@ public struct Handwriting: View {
         slant: Double = 0,
         dryTime: TimeInterval = Pen.dryTime,
         signatures: [Glyph] = [],
+        mirrored: Bool = false,
+        weather: Weathering = .dry,
+        words: Int? = nil,
         onDone: (() -> Void)? = nil
     ) {
         self.text = text
@@ -142,6 +190,9 @@ public struct Handwriting: View {
         self.slant = slant
         self.dryTime = dryTime
         self.signatures = signatures
+        self.mirrored = mirrored
+        self.weather = weather
+        self.words = words
         self.onDone = onDone
     }
 
@@ -151,13 +202,29 @@ public struct Handwriting: View {
         WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures) {
             TimelineView(.animation(paused: still)) { context in
                 Canvas { graphics, canvasSize in
-                    let elapsed: TimeInterval = still ? .infinity : context.date.timeIntervalSince(began)
-                    draw(written(for: canvasSize.width), at: elapsed, in: &graphics)
+                    let line = written(for: canvasSize.width)
+                    let elapsed: TimeInterval
+                    if still {
+                        elapsed = .infinity
+                    } else if let words {
+                        // A held pen: its own clock, which stops at the end of the last word it is allowed.
+                        hold.allowed = words
+                        elapsed = hold.tick(context.date, limit: line.moment(afterWords: words))
+                    } else {
+                        elapsed = context.date.timeIntervalSince(began)
+                    }
+                    if mirrored {
+                        // Flip the page left to right: move its right edge to the left, then draw with x running backwards.
+                        graphics.translateBy(x: canvasSize.width, y: 0)
+                        graphics.scaleBy(x: -1, y: 1)
+                    }
+                    draw(line, at: elapsed, in: &graphics)
                 }
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { finishNow() }
+        // A held pen is not hurried by a tap: the app holding it decides when it may write.
+        .onTapGesture { if words == nil { finishNow() } }
         .task(id: text) { await write() }
         // The strokes mean nothing to VoiceOver; the words do (without the marks that cross some of them out).
         .accessibilityElement()
@@ -190,12 +257,42 @@ public struct Handwriting: View {
             // 1 while the stroke is being made, 0 once it has dried.
             let wet = dryTime > 0 ? min(1, max(0, 1 - (age - mark.duration) / dryTime)) : 0
             let path = eased < 1 ? mark.path.trimmedPath(from: 0, to: eased) : mark.path
+            // In the sun the ink goes down dark like any other and loses its strength as it dries.
+            let strength = weather == .sun ? Pen.sunFade + (1 - Pen.sunFade) * wet : 1
             graphics.stroke(
                 path,
-                with: .color((mark.color ?? ink).opacity(mark.ink + (1 - mark.ink) * wet)),
+                with: .color((mark.color ?? ink).opacity((mark.ink + (1 - mark.ink) * wet) * strength)),
                 // Wet ink stands a little proud of the paper, and sinks in as it dries.
                 style: StrokeStyle(lineWidth: mark.width * (1 + Pen.wetSpread * CGFloat(wet)), lineCap: .round, lineJoin: .round)
             )
+        }
+        if weather == .rain { drawRun(written, at: elapsed, in: &graphics) }
+    }
+
+    /// Rain: behind the pen, each stroke bleeds a little way down the page.
+    /// The run is drawn as three soft copies of the stroke, each lower and
+    /// fainter than the last, on a blurred layer over the writing.
+    private func drawRun(_ written: Written, at elapsed: TimeInterval, in graphics: inout GraphicsContext) {
+        graphics.drawLayer { layer in
+            layer.addFilter(.blur(radius: xHeight * 0.07))
+            for (index, mark) in written.marks.enumerated() {
+                // The run starts when the stroke is finished, and takes `runTime` to get where it is going.
+                let age = elapsed - mark.start - mark.duration
+                if age <= 0 { continue }
+                let soaked = min(1, age / Pen.runTime)
+                // Not every stroke runs the same distance. The stroke's number is scrambled into
+                // a share between 0 and 1, the same one every time, so the page does not shimmer.
+                let luck = Double((index &* 2_654_435_761) % 97) / 97
+                let run = xHeight * Pen.runLength * CGFloat(soaked * (0.25 + 0.75 * luck))
+                for step in 1...3 {
+                    let part = CGFloat(step) / 3
+                    layer.stroke(
+                        mark.path.offsetBy(dx: 0, dy: run * part),
+                        with: .color((mark.color ?? ink).opacity(mark.ink * 0.2 * Double(1.25 - part))),
+                        style: StrokeStyle(lineWidth: mark.width * 1.3, lineCap: .round, lineJoin: .round)
+                    )
+                }
+            }
         }
     }
 
@@ -212,6 +309,10 @@ public struct Handwriting: View {
         }
 
         if haptics { Haptic.prepare() }
+        if words != nil {
+            await writeHeld(plan)
+            return
+        }
         began = Date()
         still = false
         for start in plan.wordStarts {
@@ -226,6 +327,31 @@ public struct Handwriting: View {
 
         // Let the last strokes dry, then stop redrawing.
         if !skipped { await sleep(until: plan.duration + dryTime + 0.1) }
+        if !Task.isCancelled { still = true }
+    }
+
+    /// Writing with a held pen. There is nothing to sleep until, because when
+    /// the next word may start is not known. So this looks at the pen's clock
+    /// ten times a second: it ticks as each word starts, says when the line is
+    /// done, and stops the redrawing once the last ink is dry.
+    private func writeHeld(_ plan: Written) async {
+        hold.reset()
+        still = false
+        var ticked = 0
+        var done = false
+        while !Task.isCancelled {
+            // A word has started if the pen is allowed it and the clock has reached it.
+            while ticked < plan.wordStarts.count, ticked < hold.allowed, hold.time >= plan.wordStarts[ticked] {
+                if haptics { Haptic.tick() }
+                ticked += 1
+            }
+            if !done, hold.time >= plan.duration {
+                done = true
+                onDone?()
+            }
+            if hold.time >= plan.duration + dryTime + 0.1 { break }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
         if !Task.isCancelled { still = true }
     }
 
