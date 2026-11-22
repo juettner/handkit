@@ -38,6 +38,8 @@ programs a font carries; iOS runs the first three without being asked):
   calt  the drawings of a letter take turns, so repeated letters do not look
         stamped. A font cannot roll dice; it walks a fixed cycle instead, and
         the same text always comes out the same, as it does from the pen.
+        Occasional drawings take turns with the usual ones here: a font
+        has no "some of the time".
   ss01  rare drawings (the "i" with a heart). Off unless the app asks: a
         font cannot use one "now and then", so they are opt-in. A second
         rare drawing of a letter is ss02, and so on.

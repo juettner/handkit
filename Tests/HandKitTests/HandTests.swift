@@ -97,4 +97,37 @@ final class HandTests: XCTestCase {
         // The long key must not be taken for joined letters.
         XCTAssertEqual(h.pieces(of: "ab")?.map(\.count), [1, 1])
     }
+
+    func testFrequencyReadsOldFilesAndWritesBothFlags() throws {
+        var glyph = Glyph(strokes: [[0, 0, 1, 0]], advance: 1, rare: true)
+        XCTAssertEqual(glyph.frequency, .rare)
+        glyph.frequency = .occasional
+        XCTAssertNil(glyph.rare)
+        XCTAssertEqual(glyph.occasional, true)
+        glyph.frequency = .usual
+        XCTAssertNil(glyph.occasional)
+        // A file from before "occasional" existed.
+        let old = try XCTUnwrap(Hand(data: Data(#"{"glyphs":{"a":[{"strokes":[[0,0,1,0]],"advance":1}]}}"#.utf8)))
+        XCTAssertEqual(old.glyphs["a"]?.first?.frequency, .usual)
+    }
+
+    func testOccasionalTurnsUpMoreThanRareAndLessThanUsual() {
+        // Three drawings told apart by their width.
+        let h = Hand(glyphs: ["a": [
+            Glyph(strokes: [[0, 0, 1, 0]], advance: 1),
+            Glyph(strokes: [[0, 0, 2, 0]], advance: 2, occasional: true),
+            Glyph(strokes: [[0, 0, 3, 0]], advance: 3, rare: true),
+        ]])
+        var widths: [Int: Int] = [:]
+        // One letter per word, so "at most one rare per word" does not come into it.
+        for seed in 1...4000 {
+            let written = Written("a", hand: h, xHeight: 1, width: 1000, lettersPerSecond: 15, seed: seed)
+            widths[Int(written.size.width.rounded()), default: 0] += 1
+        }
+        let usual = widths[1] ?? 0, occasional = widths[2] ?? 0, rare = widths[3] ?? 0
+        XCTAssertGreaterThan(usual, occasional)
+        XCTAssertGreaterThan(occasional, rare)
+        XCTAssertGreaterThan(rare, 0)
+        print("usual \(usual), occasional \(occasional), rare \(rare) of 4000")
+    }
 }

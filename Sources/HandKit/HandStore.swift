@@ -76,6 +76,13 @@ public final class HandStore: ObservableObject {
         save()
     }
 
+    /// Changes how often one drawing of a character is used.
+    public func setFrequency(_ frequency: Glyph.Frequency, at index: Int, for character: String) {
+        guard hand.glyphs[character]?.indices.contains(index) == true else { return }
+        hand.glyphs[character]?[index].frequency = frequency
+        save()
+    }
+
     /// Forgets every drawing of a character.
     public func forget(_ character: String) {
         hand.glyphs[character] = nil

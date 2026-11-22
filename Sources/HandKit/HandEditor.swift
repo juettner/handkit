@@ -46,8 +46,11 @@
 //  then uses that drawing wherever those letters meet, and falls back to the
 //  single letters everywhere else, so the single letters are still needed.
 //
-//  "rarely" keeps a drawing as a rare one: the pen uses it only now and then
-//  in place of the usual drawings of that letter. The last entry in the list
+//  Above the square is a row of the drawings already kept for the character.
+//  Tap one and the line under the row sets how often the pen uses it: usual
+//  (the everyday ones, picked between evenly), occasional (variety: about one
+//  time in five) or rare (a surprise: about one in thirty, like an "i"
+//  dotted with a heart). "forget" removes just that one. The last entry in the list
 //  is not a letter at all: "a scribble" is for hearts and doodles, one of
 //  which sometimes follows a line.
 //
@@ -175,7 +178,9 @@ public struct HandEditor: View {
     private var character: String { all[min(index, all.count - 1)] }
     private var drawnCount: Int { Self.characters.filter { !(hands.hand.glyphs[$0] ?? []).isEmpty }.count }
     private var timesDrawn: Int { hands.hand.glyphs[character]?.count ?? 0 }
-    private var timesRare: Int { hands.hand.glyphs[character]?.filter(\.isRare).count ?? 0 }
+    private func times(_ frequency: Glyph.Frequency) -> Int {
+        hands.hand.glyphs[character]?.filter { $0.frequency == frequency }.count ?? 0
+    }
     private var isScribble: Bool { character == Hand.scribble }
     /// The name of the picture being drawn, when it is one and not writing.
     private var drawingName: String? { Hand.drawingName(of: character) }
@@ -187,7 +192,8 @@ public struct HandEditor: View {
     private var drawnNote: String {
         if timesDrawn == 0 { return "not drawn yet" }
         let drawn = timesDrawn == 1 ? "drawn once" : "drawn \(timesDrawn) times"
-        return timesRare == 0 ? drawn : "\(drawn), \(timesRare) rare"
+        let kinds = [(times(.occasional), "occasional"), (times(.rare), "rare")].filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
+        return ([drawn] + kinds).joined(separator: ", ")
     }
     private var blank: Bool { strokes.isEmpty && current.isEmpty }
     /// A letter already drawn, to show palely either side of the one being
@@ -195,7 +201,7 @@ public struct HandEditor: View {
     /// straight sides); failing that an "o", failing that any small letter.
     private var neighbour: Glyph? {
         for key in ["n", "o"] + Self.characters.prefix(26) {
-            if let glyph = hands.hand.glyphs[key]?.first(where: { !$0.isRare }) { return glyph }
+            if let glyph = hands.hand.glyphs[key]?.first(where: { $0.frequency == .usual }) { return glyph }
         }
         return nil
     }
@@ -261,6 +267,7 @@ public struct HandEditor: View {
             }
 
             previous
+            pickedLine
 
             ruledSquare
                 .padding(.top, 8)
@@ -270,12 +277,6 @@ public struct HandEditor: View {
                     .accessibilityLabel("Keep this drawing and go to the next character")
                 Word("again", disabled: blank) { keep(advance: false) }
                     .accessibilityLabel("Keep this drawing and draw the same character once more")
-                // A drawing for now and then: a heart for the dot of an "i". A scribble
-                // is already occasional, so it has no rare kind.
-                if !isFreeform {
-                    Word("rarely", disabled: blank) { keep(advance: false, rare: true) }
-                        .accessibilityLabel("Keep this drawing as a rare one, used only now and then")
-                }
                 Word("clear", tone: .grey, disabled: blank) { strokes = []; inks = []; current = [] }
                 Spacer()
             }
@@ -330,7 +331,7 @@ public struct HandEditor: View {
                 ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen to colour for part of it. Draw it more than once with again and the app can vary them."
                 : isScribble
                 ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
-                : "Draw it the way you write it, sitting on the line. Keep a drawing with rarely and it only turns up now and then, like a heart for a dot.")
+                : "Draw it the way you write it, sitting on the line. Tap a drawing in the row above to make it occasional or rare, like a heart for a dot.")
                 .padding(.top, 8)
 
             // Letters written as one shape. Name them here, then draw them like any other.
@@ -371,8 +372,8 @@ public struct HandEditor: View {
                             .frame(width: thumbWidth(glyph), height: Self.thumb)
                             .overlay(Rectangle().stroke(picked == number ? style.ink : style.edge, lineWidth: 1))
                             .overlay(alignment: .topTrailing) {
-                                if glyph.isRare {
-                                    Text("rare")
+                                if glyph.frequency != .usual {
+                                    Text(glyph.frequency.rawValue)
                                         .font(style.font(9))
                                         .foregroundStyle(style.grey)
                                         .padding(2)
@@ -381,14 +382,8 @@ public struct HandEditor: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(PressedStyle())
-                    .accessibilityLabel("Drawing \(number + 1) of \(label(character))\(glyph.isRare ? ", rare" : "")")
+                    .accessibilityLabel("Drawing \(number + 1) of \(label(character))\(glyph.frequency == .usual ? "" : ", \(glyph.frequency.rawValue)")")
                     .accessibilityAddTraits(picked == number ? .isSelected : [])
-                }
-                if let chosen = picked, kept.indices.contains(chosen) {
-                    Word("forget this one", tone: .grey, size: TypeSize.small) {
-                        hands.remove(at: chosen, for: character)
-                        picked = nil
-                    }
                 }
             }
         }
@@ -396,6 +391,32 @@ public struct HandEditor: View {
         .padding(.top, 4)
         // Another character has other drawings: nothing of this one is picked there.
         .onChange(of: character) { picked = nil }
+    }
+
+    /// What can be done with the picked drawing: how often the pen uses it,
+    /// and forgetting it. Always there, dimmed until a drawing is picked, so
+    /// nothing below moves. A scribble or a picture has no "how often".
+    private var pickedLine: some View {
+        let kept = hands.hand.glyphs[character] ?? []
+        let chosen = picked.flatMap { kept.indices.contains($0) ? $0 : nil }
+        let now = chosen.map { kept[$0].frequency }
+        return HStack(spacing: 20) {
+            Small(chosen == nil ? "tap a drawing" : "this one is")
+            if !isFreeform {
+                ForEach(Glyph.Frequency.allCases, id: \.self) { frequency in
+                    Word(frequency.rawValue, tone: now == frequency ? .ink : .grey, marked: now == frequency, disabled: chosen == nil, size: TypeSize.small) {
+                        if let chosen { hands.setFrequency(frequency, at: chosen, for: character) }
+                    }
+                    .accessibilityLabel("Use this drawing: \(frequency.rawValue)")
+                }
+            }
+            Spacer()
+            Word("forget", tone: .grey, disabled: chosen == nil, size: TypeSize.small) {
+                if let chosen { hands.remove(at: chosen, for: character) }
+                picked = nil
+            }
+            .accessibilityLabel("Forget this one drawing")
+        }
     }
 
     private func thumbWidth(_ glyph: Glyph) -> CGFloat {
@@ -588,7 +609,7 @@ public struct HandEditor: View {
     }
 
     /// Saves what is in the square as one drawing of the current character.
-    private func keep(advance: Bool, rare: Bool = false) {
+    private func keep(advance: Bool) {
         let points = strokes.flatMap { $0 }
         guard let left = points.map(\.x).min(), let right = points.map(\.x).max() else { return }
         func rounded(_ value: CGFloat) -> Double { (Double(value) * 1000).rounded() / 1000 }
@@ -598,7 +619,6 @@ public struct HandEditor: View {
         let glyph = Glyph(
             strokes: flat,
             advance: max(0.12, rounded((right - left) / Ruling.unit)),
-            rare: rare ? true : nil,
             colors: inks.contains { $0 >= 0 } ? inks : nil
         )
         hands.add(glyph, for: character)
@@ -606,7 +626,12 @@ public struct HandEditor: View {
         strokes = []
         inks = []
         current = []
-        if advance { move(1) }
+        if advance {
+            move(1)
+        } else {
+            // The drawing just kept is picked, so "occasional" or "rare" is one tap away.
+            picked = (hands.hand.glyphs[character]?.count ?? 1) - 1
+        }
     }
 
     /// Turns the drawing in the square into the app icon: a 1024 by 1024 PNG,

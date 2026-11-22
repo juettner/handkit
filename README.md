@@ -89,11 +89,15 @@ in Debug builds:
 
 1. Draw each character on the ruled square. "keep" moves on; "again" keeps it
    and lets you draw the same character once more (two or three of each stops
-   repeated letters looking stamped); "rarely" keeps it as a now-and-then
-   drawing.
-2. "try it" writes a sentence with what you have so far.
-3. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
-4. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
+   repeated letters looking stamped).
+2. The row above the square shows every drawing kept for that character.
+   Tap one to set how often the pen uses it: **usual** (the everyday ones,
+   picked between evenly), **occasional** (variety, about one time in five)
+   or **rare** (a surprise, about one in thirty: an "i" dotted with a heart).
+   "forget" removes just that one.
+3. "try it" writes a sentence with what you have so far.
+4. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
+5. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
 
 Letters drawn on the device win over the shipped file, so you see your work
 as you go. A hand drawn elsewhere (an iPad and a Pencil) comes in with "use a

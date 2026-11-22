@@ -45,8 +45,10 @@ public enum Pen {
     public static let ascent: CGFloat = 1.95
     public static let descent: CGFloat = 0.95
     /// How often a rare drawing takes the place of a usual one, each time its
-    /// letter comes up. At most one per word.
-    public static let rareChance: Double = 0.12
+    /// letter comes up: about once in thirty. At most one per word.
+    public static let rareChance: Double = 0.035
+    /// How often an occasional drawing does: about once in five.
+    public static let occasionalChance: Double = 0.2
     /// How often a scribble follows a line.
     public static let scribbleChance: Double = 0.2
     /// How long ink takes to dry.
@@ -119,12 +121,19 @@ public struct Written {
                 // Both numbers are always drawn, so one letter's luck never shifts the next one's.
                 let roll = random.unit()
                 let pick = random.unit()
-                let usual = piece.drawings.filter { !$0.isRare }
-                let rare = piece.drawings.filter { $0.isRare }
-                var pool = usual.isEmpty ? rare : usual
-                if playful && !rareUsed && !usual.isEmpty && !rare.isEmpty && roll < Pen.rareChance {
-                    pool = rare
-                    rareUsed = true
+                let usual = piece.drawings.filter { $0.frequency == .usual }
+                let occasional = piece.drawings.filter { $0.frequency == .occasional }
+                let rare = piece.drawings.filter { $0.frequency == .rare }
+                // A letter with no usual drawing is written with the next most common kind it has.
+                var pool = !usual.isEmpty ? usual : !occasional.isEmpty ? occasional : rare
+                if playful && !usual.isEmpty {
+                    // One roll decides: the lowest numbers are the rare drawing, the next band the occasional one.
+                    if !rare.isEmpty && !rareUsed && roll < Pen.rareChance {
+                        pool = rare
+                        rareUsed = true
+                    } else if !occasional.isEmpty && roll < Pen.rareChance + Pen.occasionalChance {
+                        pool = occasional
+                    }
                 }
                 return pool[Int(pick * Double(pool.count)) % pool.count]
             }

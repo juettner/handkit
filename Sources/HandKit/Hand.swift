@@ -51,12 +51,16 @@ public struct Glyph: Codable, Equatable {
     /// A drawing for now and then, not for every time: an "i" dotted with a
     /// heart, an "o" drawn as one. Left out of the file for ordinary drawings.
     public var rare: Bool?
+    /// A drawing for some of the time: more than rare, less than usual. Left
+    /// out of the file unless set. (`rare` wins if a file has both.)
+    public var occasional: Bool?
 
     /// The colour of each stroke as 0xRRGGBB, in the same order as `strokes`,
     /// with -1 for ordinary ink. Left out when the whole drawing is in ink.
     public var colors: [Int]?
 
-    public init(strokes: [[Double]], advance: Double, rare: Bool? = nil, colors: [Int]? = nil) {
+    public init(strokes: [[Double]], advance: Double, rare: Bool? = nil, occasional: Bool? = nil, colors: [Int]? = nil) {
+        self.occasional = occasional
         self.strokes = strokes
         self.advance = advance
         self.rare = rare
@@ -64,6 +68,27 @@ public struct Glyph: Codable, Equatable {
     }
 
     public var isRare: Bool { rare == true }
+
+    /// How often the pen reaches for a drawing, when a letter has several.
+    ///
+    ///   usual       the everyday ones. The pen picks between them evenly.
+    ///   occasional  variety: takes a usual one's place some of the time.
+    ///   rare        a surprise: takes its place only once in a long while.
+    ///
+    /// The odds are `Pen.occasionalChance` and `Pen.rareChance`.
+    public enum Frequency: String, CaseIterable {
+        case usual, occasional, rare
+    }
+
+    /// Read from, and written to, the two flags above, so files drawn before
+    /// "occasional" existed still read correctly.
+    public var frequency: Frequency {
+        get { rare == true ? .rare : occasional == true ? .occasional : .usual }
+        set {
+            rare = newValue == .rare ? true : nil
+            occasional = newValue == .occasional ? true : nil
+        }
+    }
 
     /// The colour a stroke was drawn in, or nil for ordinary ink.
     public func color(of stroke: Int) -> Color? {
