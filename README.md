@@ -23,6 +23,16 @@ apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 | `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. iOS only. |
 | `Tools/hand_font.py` | Turns a `hand.json` into a real `.ttf`, for text that cannot be drawn stroke by stroke (a text field being typed in). |
 
+## Try it
+
+```bash
+open Demo/HandKitDemo.xcodeproj
+```
+
+Pick an iPhone simulator and Run. The demo is one page that writes whatever
+you type in your handwriting, and a word that opens the drawing page. All of
+it is in `Demo/HandKitDemo/DemoApp.swift`, about a hundred lines.
+
 ## Adding it to an app
 
 In Xcode: **File > Add Package Dependencies...**, then either paste this
