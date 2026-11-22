@@ -14,7 +14,8 @@
 //  The drawing keeps its proportions, is centred, and keeps the colours its
 //  strokes were drawn in. The line is as thick, against the drawing, as the
 //  pen was on the ruled square, so a picture shown small has a fine line and
-//  one shown large a bold one, as if the paper had been scaled.
+//  one shown large a bold one, as if the paper had been scaled. A stroke
+//  drawn with a finer or a bolder line keeps that too.
 //
 
 import SwiftUI
@@ -41,11 +42,11 @@ public struct GlyphView: View {
             let height = max(bottom - top, 0.01)
             // A little air round the edge, so the round ends of the line are not cut off.
             let scale = min(size.width / width, size.height / height) * 0.92
-            let line = max(minimumLine, Pen.nib * scale)
             let dx = (size.width - width * scale) / 2 - left * scale
             let dy = (size.height - height * scale) / 2 - top * scale
             for (number, stroke) in strokes.enumerated() where !stroke.isEmpty {
                 let placed = stroke.map { CGPoint(x: $0.x * scale + dx, y: $0.y * scale + dy) }
+                let line = max(minimumLine, Pen.nib * scale * glyph.width(of: number))
                 graphics.stroke(
                     Written.smooth(placed),
                     with: .color(glyph.color(of: number) ?? ink),

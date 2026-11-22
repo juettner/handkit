@@ -96,9 +96,14 @@ in Debug builds:
    picked between evenly), **occasional** (variety, about one time in five)
    or **rare** (a surprise, about one in thirty: an "i" dotted with a heart).
    "forget" removes just that one.
-3. "try it" writes a sentence with what you have so far.
-4. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
-5. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
+3. Under the square, "ink" and "colour" set the pen's colour, and the three
+   short lines beside them set its line: fine, medium or bold. Both are
+   chosen stroke by stroke and kept with the stroke (`colors` and `widths`
+   in the file), so a letter can be in ink with a red heart, and a picture
+   can have a bold outline and fine detail.
+4. "try it" writes a sentence with what you have so far.
+5. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
+6. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
 
 Letters drawn on the device win over the shipped file, so you see your work
 as you go. A hand drawn elsewhere (an iPad and a Pencil) comes in with "use a
@@ -149,6 +154,9 @@ Handwriting(text: "", hand: Hand(), signatures: signatures)
 `GlyphView(signatures[0])` shows one as a still picture. `Glyph` is `Codable`,
 so the list goes to a server as JSON as it is.
 
+The three short lines beside "clear" choose the pen's line: fine, medium or
+bold. A signature keeps the line it was signed with.
+
 The demo keeps its signatures in the hand, as a drawing named "signature".
 
 ## The font tool
@@ -160,7 +168,7 @@ uv run Tools/hand_font.py my-hand.json -o Hand.ttf --family "My Hand"
 (`uv` installs fonttools and shapely for the run. Without it: `pip install
 fonttools shapely`, then `python3 Tools/hand_font.py ...`.) The tool reads the
 pen's sizes out of `Sources/HandKit/Written.swift`, so the font and the pen
-agree. Colour is lost: a font is one colour.
+agree. A stroke's thickness is kept. Colour is lost: a font is one colour.
 
 ## Tests
 
