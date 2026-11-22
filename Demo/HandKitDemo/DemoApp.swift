@@ -10,6 +10,8 @@
 //    2. get a hand                 HandStore.shared.active
 //    3. write with it              Handwriting(text:hand:)
 //    4. let somebody draw one      HandEditor()
+//    5. let them sign              SignaturePad(signatures:), and
+//                                  Handwriting(text:hand:signatures:)
 //
 //  For a Java person: `@main` marks the class with `public static void
 //  main`. `WindowGroup` is the window; what is inside it is the first screen.
@@ -39,11 +41,23 @@ struct DemoView: View {
     /// Changing this number makes the pen write the line again, a little differently.
     @State private var again = 0
     @State private var drawing = false
+    @State private var signing = false
 
     private let style = HandStyle.journal
 
     /// Pictures kept in the hand beside the letters. P.S. shows these two as its envelopes.
     static let pictures = ["envelope-sealed", "envelope-open", "doodle"]
+
+    /// The signatures, kept in the hand as a drawing named "signature", so
+    /// they are saved with it. `Binding(get:set:)` is a pair of functions the
+    /// signing page calls to read the list and to change it. An app with
+    /// accounts keeps each person's signatures on its server instead.
+    private var signatures: Binding<[Glyph]> {
+        Binding(
+            get: { hands.hand.drawings(named: "signature") },
+            set: { hands.set($0, for: Hand.drawingKey("signature")) }
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -54,7 +68,7 @@ struct DemoView: View {
 
                 // The whole library in one `if`: is there a hand, and can it write this?
                 if let hand = hands.active {
-                    Handwriting(text: text, hand: hand, size: 34, ink: style.ink, seed: again)
+                    Handwriting(text: text, hand: hand, size: 34, ink: style.ink, seed: again, signatures: signatures.wrappedValue)
                         // A new id makes SwiftUI treat it as a new view, so the pen starts over.
                         .id("\(text)#\(again)")
 
@@ -82,6 +96,7 @@ struct DemoView: View {
                     word("write it again") { again += 1 }
                     word("draw my hand") { drawing = true }
                 }
+                word("my signature") { signing = true }
             }
             .padding(32)
         }
@@ -90,6 +105,9 @@ struct DemoView: View {
             // The pictures the apps using this hand need, so they are on the page
             // ready to draw. Add a name here when an app needs another.
             HandEditor(style: style, drawings: DemoView.pictures)
+        }
+        .fullScreenCover(isPresented: $signing) {
+            SignaturePad(signatures: signatures, style: style)
         }
     }
 

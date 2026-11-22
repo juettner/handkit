@@ -31,6 +31,13 @@
 //  must be complete (and show it another way when it is not), or
 //  `hand.missing(in:)` to say which characters those are.
 //
+//  It can also sign. Give it `signatures` (drawings made on SignaturePad) and
+//  the pen puts one under the writing when the words are done. With an empty
+//  text and an empty hand it writes the signature alone, which is how an app
+//  signs a note it has set in type:
+//
+//      Handwriting(text: "", hand: Hand(), signatures: signatures)
+//
 
 import SwiftUI
 
@@ -43,13 +50,14 @@ private struct WritingLayout: Layout {
     let seed: Int
     let looseness: Double
     let slant: Double
+    let signatures: [Glyph]
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         // Asked for its ideal size (no width), it answers with one long line.
         guard let width = proposal.width, width.isFinite, width > 0 else {
-            return Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant).size
+            return Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures).size
         }
-        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant)
+        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
         return CGSize(width: width, height: written.size.height)
     }
 
@@ -87,6 +95,9 @@ public struct Handwriting: View {
     var slant: Double = 0
     /// How long the ink stays wet, in seconds.
     var dryTime: TimeInterval = Pen.dryTime
+    /// One person's signature, drawn one or more times (see SignaturePad). The
+    /// pen signs under the writing with one of them. Empty for no signature.
+    var signatures: [Glyph] = []
     /// Called once the whole line is on the page (written or tapped through).
     var onDone: (() -> Void)? = nil
 
@@ -112,6 +123,7 @@ public struct Handwriting: View {
         looseness: Double = 1,
         slant: Double = 0,
         dryTime: TimeInterval = Pen.dryTime,
+        signatures: [Glyph] = [],
         onDone: (() -> Void)? = nil
     ) {
         self.text = text
@@ -125,13 +137,14 @@ public struct Handwriting: View {
         self.looseness = looseness
         self.slant = slant
         self.dryTime = dryTime
+        self.signatures = signatures
         self.onDone = onDone
     }
 
     private var xHeight: CGFloat { size * Pen.xHeightPerSize * textScale }
 
     public var body: some View {
-        WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant) {
+        WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures) {
             TimelineView(.animation(paused: still)) { context in
                 Canvas { graphics, canvasSize in
                     let elapsed: TimeInterval = still ? .infinity : context.date.timeIntervalSince(began)
@@ -144,13 +157,20 @@ public struct Handwriting: View {
         .task(id: text) { await write() }
         // The strokes mean nothing to VoiceOver; the words do (without the marks that cross some of them out).
         .accessibilityElement()
-        .accessibilityLabel(Hand.unstruck(text))
+        .accessibilityLabel(spoken)
+    }
+
+    /// What VoiceOver says: the words (without the marks that cross some of them out), and that it is signed.
+    private var spoken: String {
+        let words = Hand.unstruck(text)
+        if signatures.isEmpty { return words }
+        return words.isEmpty ? "Signature" : "\(words). Signed."
     }
 
     private func written(for width: CGFloat) -> Written {
-        let key = "\(text)|\(width)|\(xHeight)|\(speed)|\(playful)|\(seed)|\(looseness)|\(slant)"
+        let key = "\(text)|\(width)|\(xHeight)|\(speed)|\(playful)|\(seed)|\(looseness)|\(slant)|\(signatures.count)"
         if cache.key == key, let written = cache.written { return written }
-        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant)
+        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
         cache.key = key
         cache.written = written
         return written
@@ -180,7 +200,7 @@ public struct Handwriting: View {
     private func write() async {
         skipped = false
         // Timing does not depend on where the lines break, so any width will do here.
-        let plan = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant)
+        let plan = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
         if reduceMotion || speed <= 0 || plan.marks.isEmpty {
             still = true
             onDone?()

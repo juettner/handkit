@@ -23,6 +23,7 @@ apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 | `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): pass their names to `HandEditor(drawings:)` and they get a row of their own on the drawing page. |
 | `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. |
 | `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. It also asks for the app's icon (the "app icon" entry in the row of pictures): there the square is the icon, and "send the icon" hands over the 1024 x 1024 `icon.png`. `HandEditor(icon: false)` leaves that out. iOS only. |
+| `SignaturePad` | The signing page: sign on a line, keep a few. Each is a `Glyph`, and `Handwriting(signatures:)` signs under a line with one of them. iOS only. |
 | `Tools/hand_font.py` | Turns a `hand.json` into a real `.ttf`, for text that cannot be drawn stroke by stroke (a text field being typed in). |
 
 ## Try it
@@ -115,9 +116,14 @@ in Debug builds:
    picked between evenly), **occasional** (variety, about one time in five)
    or **rare** (a surprise, about one in thirty: an "i" dotted with a heart).
    "forget" removes just that one.
-3. "try it" writes a sentence with what you have so far.
-4. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
-5. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
+3. Under the square, "ink" and "colour" set the pen's colour, and the three
+   short lines beside them set its line: fine, medium or bold. Both are
+   chosen stroke by stroke and kept with the stroke (`colors` and `widths`
+   in the file), so a letter can be in ink with a red heart, and a picture
+   can have a bold outline and fine detail.
+4. "try it" writes a sentence with what you have so far.
+5. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
+6. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
 
 Letters drawn on the device win over the shipped file, so you see your work
 as you go. A hand drawn elsewhere (an iPad and a Pencil) comes in with "use a
@@ -131,6 +137,48 @@ style.font = { .custom("SpecialElite-Regular", size: $0) }
 HandEditor(style: style)
 ```
 
+## Signing
+
+A signature is one drawing, a `Glyph` like any letter, but it belongs to a
+person and not to a hand: somebody who has never drawn an alphabet can still
+sign. `SignaturePad` is the page for it, and it leaves where the signatures
+are kept to the app:
+
+```swift
+@State private var signatures: [Glyph] = []     // or loaded from your server
+@State private var signing = false
+
+// somewhere in body:
+.fullScreenCover(isPresented: $signing) {
+    SignaturePad(signatures: $signatures)       // adds to, and removes from, the list
+}
+```
+
+Keep a few (five at most, unless you pass another `limit`) and they are not
+all alike. To sign a line, hand the list to the pen:
+
+```swift
+Handwriting(text: note, hand: hand, signatures: signatures)
+```
+
+The pen writes the line, then signs under it with one of them, slowly. Which
+one depends on the text, so the same note is always signed the same way and
+the next note probably is not. A note you show in type can be signed too:
+give the pen no text and an empty hand, and it writes the signature alone.
+
+```swift
+Text(note)
+Handwriting(text: "", hand: Hand(), signatures: signatures)
+```
+
+`GlyphView(signatures[0])` shows one as a still picture. `Glyph` is `Codable`,
+so the list goes to a server as JSON as it is.
+
+The three short lines beside "clear" choose the pen's line: fine, medium or
+bold. A signature keeps the line it was signed with.
+
+The demo keeps its signatures in the hand, as a drawing named "signature".
+
 ## The font tool
 
 ```bash
@@ -140,7 +188,7 @@ uv run Tools/hand_font.py my-hand.json -o Hand.ttf --family "My Hand"
 (`uv` installs fonttools and shapely for the run. Without it: `pip install
 fonttools shapely`, then `python3 Tools/hand_font.py ...`.) The tool reads the
 pen's sizes out of `Sources/HandKit/Written.swift`, so the font and the pen
-agree. Colour is lost: a font is one colour.
+agree. A stroke's thickness is kept. Colour is lost: a font is one colour.
 
 ## Tests
 

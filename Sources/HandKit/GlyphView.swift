@@ -14,7 +14,8 @@
 //  The drawing keeps its proportions, is centred, and keeps the colours its
 //  strokes were drawn in. The line is as thick, against the drawing, as the
 //  pen was on the ruled square, so a picture shown small has a fine line and
-//  one shown large a bold one, as if the paper had been scaled.
+//  one shown large a bold one, as if the paper had been scaled. A stroke
+//  drawn with a finer or a bolder line keeps that too.
 //
 //  `Sketch` is the same picture, drawn: the pen makes it stroke by stroke,
 //  in the order and direction it was drawn, the way `Handwriting` writes a
@@ -40,21 +41,23 @@ public struct GlyphView: View {
 
     public var body: some View {
         Canvas { graphics, size in
-            guard let fitted = GlyphView.fit(glyph, in: size, minimumLine: minimumLine) else { return }
+            guard let fitted = GlyphView.fit(glyph, in: size) else { return }
             for (number, stroke) in fitted.strokes.enumerated() where !stroke.isEmpty {
                 graphics.stroke(
                     Written.smooth(stroke),
                     with: .color(glyph.color(of: number) ?? ink),
-                    style: StrokeStyle(lineWidth: fitted.line, lineCap: .round, lineJoin: .round)
+                    style: StrokeStyle(lineWidth: max(minimumLine, fitted.line * glyph.width(of: number)), lineCap: .round, lineJoin: .round)
                 )
             }
         }
     }
 
     /// The drawing's strokes moved and scaled to sit centred in `size`, and
-    /// how thick to draw them. Nil for a drawing with no points. The strokes
-    /// keep their numbers, so the colour of each can still be looked up.
-    static func fit(_ glyph: Glyph, in size: CGSize, minimumLine: CGFloat) -> (strokes: [[CGPoint]], line: CGFloat)? {
+    /// how thick a medium line is at that scale (a stroke drawn finer or
+    /// bolder multiplies it by `glyph.width(of:)`). Nil for a drawing with no
+    /// points. The strokes keep their numbers, so the colour and the width
+    /// of each can still be looked up.
+    static func fit(_ glyph: Glyph, in size: CGSize) -> (strokes: [[CGPoint]], line: CGFloat)? {
         let strokes = glyph.points
         let every = strokes.flatMap { $0 }
         guard let left = every.map(\.x).min(), let right = every.map(\.x).max(),
@@ -66,7 +69,7 @@ public struct GlyphView: View {
         let dx = (size.width - width * scale) / 2 - left * scale
         let dy = (size.height - height * scale) / 2 - top * scale
         let placed = strokes.map { stroke in stroke.map { CGPoint(x: $0.x * scale + dx, y: $0.y * scale + dy) } }
-        return (placed, max(minimumLine, Pen.nib * scale))
+        return (placed, Pen.nib * scale)
     }
 }
 
@@ -96,7 +99,7 @@ public struct Sketch: View {
     public var body: some View {
         TimelineView(.animation(paused: still)) { context in
             Canvas { graphics, size in
-                guard let fitted = GlyphView.fit(glyph, in: size, minimumLine: minimumLine) else { return }
+                guard let fitted = GlyphView.fit(glyph, in: size) else { return }
                 // How far through the whole drawing the pen is, from 0 to 1.
                 let done: Double = still || duration <= 0 ? 1 : min(1, max(0, (context.date.timeIntervalSince(began) - delay) / duration))
                 // Each stroke takes a share of the time in proportion to its length.
@@ -113,7 +116,7 @@ public struct Sketch: View {
                     graphics.stroke(
                         progress < 1 ? whole.trimmedPath(from: 0, to: progress) : whole,
                         with: .color(glyph.color(of: number) ?? ink),
-                        style: StrokeStyle(lineWidth: fitted.line, lineCap: .round, lineJoin: .round)
+                        style: StrokeStyle(lineWidth: max(minimumLine, fitted.line * glyph.width(of: number)), lineCap: .round, lineJoin: .round)
                     )
                 }
             }

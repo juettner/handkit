@@ -83,6 +83,12 @@ public final class HandStore: ObservableObject {
         save()
     }
 
+    /// Replaces every drawing of a character with these. An empty list forgets it.
+    public func set(_ glyphs: [Glyph], for character: String) {
+        hand.glyphs[character] = glyphs.isEmpty ? nil : glyphs
+        save()
+    }
+
     /// Forgets every drawing of a character.
     public func forget(_ character: String) {
         hand.glyphs[character] = nil

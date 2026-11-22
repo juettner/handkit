@@ -67,6 +67,11 @@
 //  how a letter stays in ink while its heart is red. The icon keeps its
 //  colours too.
 //
+//  It can change its line the same way: the three short lines beside the
+//  colour are fine, medium and bold. Each stroke remembers which it was drawn
+//  with, so a picture can have a bold outline and fine detail, and a letter
+//  drawn bold is written bold. Medium is the pen's usual line (Pen.nib).
+//
 //  The row along the top jumps to anything: "scribble", then every letter.
 //
 //  The order puts first what ordinary sentences use most: small letters, then
@@ -137,6 +142,10 @@ public struct HandEditor: View {
     /// a letter can be in ink with only its heart in red.
     @State private var inColour = false
     @State private var colour: Color
+    /// How thick each finished stroke is, as a multiple of the usual line.
+    @State private var weights: [Double] = []
+    /// The line the pen is drawing with. Chosen per stroke, like the colour.
+    @State private var weight = LineWeight.medium
     /// The stroke under the finger.
     @State private var current: [CGPoint] = []
     @State private var trying = false
@@ -343,7 +352,7 @@ public struct HandEditor: View {
                     .accessibilityLabel("Keep this drawing and go to the next character")
                 Word("again", disabled: blank) { keep(advance: false) }
                     .accessibilityLabel("Keep this drawing and draw the same character once more")
-                Word("clear", tone: .grey, disabled: blank) { strokes = []; inks = []; current = [] }
+                Word("clear", tone: .grey, disabled: blank) { strokes = []; inks = []; weights = []; current = [] }
                 Spacer()
             }
             .padding(.top, 8)
@@ -360,6 +369,8 @@ public struct HandEditor: View {
                     .labelsHidden()
                     .onChange(of: colour) { inColour = true }
                 Spacer()
+                // The pen's line, chosen stroke by stroke like its colour.
+                LineChoice(weight: $weight)
             }
             HStack(spacing: 24) {
                 Word("before", tone: .grey) { move(-1) }
@@ -400,7 +411,7 @@ public struct HandEditor: View {
             Small(isIcon
                 ? "The app's icon. The square is the icon: what you draw, where you draw it, as thick as you see it. The pale outline is where the corners are cut off. Keep it, then send the icon; it replaces icon.png in the app's AppIcon.appiconset. Keep more than one and the one you tap in the row is the one sent."
                 : drawingName != nil
-                ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen to colour for part of it. Draw it more than once with again and the app can vary them."
+                ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen's colour or its line for part of it. Draw it more than once with again and the app can vary them."
                 : isScribble
                 ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
                 : "Draw it the way you write it, sitting on the line. Tap a drawing in the row above to make it occasional or rare, like a heart for a dot.")
@@ -553,7 +564,7 @@ public struct HandEditor: View {
                     graphics.stroke(
                         Written.smooth(placed),
                         with: .color(glyph.color(of: number) ?? style.ink),
-                        style: StrokeStyle(lineWidth: max(1, Pen.nib * unit), lineCap: .round, lineJoin: .round)
+                        style: StrokeStyle(lineWidth: max(1, Pen.nib * unit * glyph.width(of: number)), lineCap: .round, lineJoin: .round)
                     )
                 }
             }
@@ -602,6 +613,7 @@ public struct HandEditor: View {
     private func go(to entry: String) {
         strokes = []
         inks = []
+        weights = []
         current = []
         index = all.firstIndex(of: entry) ?? index
     }
@@ -639,6 +651,7 @@ public struct HandEditor: View {
 
                 // The pen is as thick here, against the ruling, as it will be on the
                 // page; on the icon's square, as thick as it will be on the icon.
+                // This is the usual line: a stroke drawn fine or bold is a multiple of it.
                 let nib = isIcon ? Icon.line * s : Pen.nib * Ruling.unit * s
 
                 // The lighter guides are for letters. A scribble or a picture is any size, anywhere.
@@ -674,14 +687,14 @@ public struct HandEditor: View {
                             (drawn.max() ?? Ruling.right) + gap,
                         ]
                         for origin in origins {
-                            for stroke in neighbour.points where !stroke.isEmpty {
+                            for (number, stroke) in neighbour.points.enumerated() where !stroke.isEmpty {
                                 let placed = stroke.map {
                                     CGPoint(x: (origin + $0.x * Ruling.unit) * s, y: (Ruling.baseline + $0.y * Ruling.unit) * s)
                                 }
                                 graphics.stroke(
                                     Written.smooth(placed),
                                     with: .color(style.edge),
-                                    style: StrokeStyle(lineWidth: nib, lineCap: .round, lineJoin: .round)
+                                    style: StrokeStyle(lineWidth: nib * neighbour.width(of: number), lineCap: .round, lineJoin: .round)
                                 )
                             }
                         }
@@ -689,13 +702,14 @@ public struct HandEditor: View {
                 }
                 for (number, stroke) in (strokes + [current]).enumerated() where !stroke.isEmpty {
                     let scaled = stroke.map { CGPoint(x: $0.x * s, y: $0.y * s) }
-                    // Finished strokes keep the colour they were drawn in; the one
-                    // under the finger shows the pen as it is now.
+                    // Finished strokes keep the colour and the line they were drawn
+                    // with; the one under the finger shows the pen as it is now.
                     let shade: Color = number < strokes.count ? strokeColor(number) : (inColour ? colour : style.ink)
+                    let thick = weights.indices.contains(number) ? CGFloat(weights[number]) : weight.rawValue
                     graphics.stroke(
                         Written.smooth(scaled),
                         with: .color(shade),
-                        style: StrokeStyle(lineWidth: nib, lineCap: .round, lineJoin: .round)
+                        style: StrokeStyle(lineWidth: nib * thick, lineCap: .round, lineJoin: .round)
                     )
                 }
             }
@@ -712,6 +726,7 @@ public struct HandEditor: View {
                         if !current.isEmpty {
                             strokes.append(current)
                             inks.append(inColour ? colour.hex : -1)
+                            weights.append(Double(weight.rawValue))
                         }
                         current = []
                     }
@@ -745,12 +760,14 @@ public struct HandEditor: View {
         let glyph = Glyph(
             strokes: flat,
             advance: max(0.12, rounded((right - inkLeft) / Ruling.unit)),
-            colors: inks.contains { $0 >= 0 } ? inks : nil
+            colors: inks.contains { $0 >= 0 } ? inks : nil,
+            widths: weights.contains { $0 != 1 } ? weights : nil
         )
         hands.add(glyph, for: character)
         Haptic.success()
         strokes = []
         inks = []
+        weights = []
         current = []
         // The icon stays where it is on "keep": the next thing to do is send it.
         if advance && !isIcon {
@@ -768,8 +785,8 @@ public struct HandEditor: View {
     /// caller does the stroking, so the row of small ones (a SwiftUI Canvas)
     /// and the picture file (Core Graphics) share the one layout.
     private func drawIcon(_ glyph: Glyph, side: CGFloat, stroke: (Path, Color, StrokeStyle) -> Void) {
-        let line = StrokeStyle(lineWidth: Icon.line * side, lineCap: .round, lineJoin: .round)
         for (number, points) in glyph.points.enumerated() where !points.isEmpty {
+            let line = StrokeStyle(lineWidth: Icon.line * side * glyph.width(of: number), lineCap: .round, lineJoin: .round)
             let placed = points.map {
                 CGPoint(x: $0.x * Ruling.unit * side, y: (Ruling.baseline + $0.y * Ruling.unit) * side)
             }
@@ -813,6 +830,7 @@ public struct HandEditor: View {
         joining = ""
         strokes = []
         inks = []
+        weights = []
         current = []
         index = all.firstIndex(of: letters) ?? index
     }
@@ -827,6 +845,7 @@ public struct HandEditor: View {
         naming = ""
         strokes = []
         inks = []
+        weights = []
         current = []
         index = all.firstIndex(of: key) ?? index
     }
@@ -834,6 +853,7 @@ public struct HandEditor: View {
     private func move(_ step: Int) {
         strokes = []
         inks = []
+        weights = []
         current = []
         index = (min(index, all.count - 1) + step + all.count) % all.count
     }
@@ -885,35 +905,36 @@ public struct HandEditor: View {
     }
 }
 
-// MARK: - The page's own small views
+// MARK: - The pages' own small views
 //
-// Private to this file, so they cannot clash with an app's views of the same
-// name. They read the style from the environment, which HandEditor sets.
+// Shared with SignaturePad. They are internal (no `public`), so an app never
+// sees them and they cannot clash with an app's views of the same name. They
+// read the style from the environment, which each page sets.
 
 private struct HandStyleKey: EnvironmentKey {
     static let defaultValue = HandStyle.journal
 }
 
-private extension EnvironmentValues {
+extension EnvironmentValues {
     var handStyle: HandStyle {
         get { self[HandStyleKey.self] }
         set { self[HandStyleKey.self] = newValue }
     }
 }
 
-private enum TypeSize {
+enum TypeSize {
     static let question: CGFloat = 30
     static let body: CGFloat = 19
     static let word: CGFloat = 15
     static let small: CGFloat = 13
 }
 
-private enum WordTone {
+enum WordTone {
     case ink, grey, faint
 }
 
 /// A word you can tap. The page has no buttons: actions are words.
-private struct Word: View {
+struct Word: View {
     @Environment(\.handStyle) private var style
     let title: String
     var tone: WordTone = .ink
@@ -958,8 +979,66 @@ private struct Word: View {
     }
 }
 
+/// The lines the pen can draw with, as multiples of its usual one (Pen.nib).
+/// The number is what is kept with each stroke (`Glyph.widths`).
+enum LineWeight: CGFloat, CaseIterable {
+    case fine = 0.55
+    case medium = 1
+    case bold = 1.8
+
+    var name: String {
+        switch self {
+        case .fine: return "fine"
+        case .medium: return "medium"
+        case .bold: return "bold"
+        }
+    }
+
+    /// How thick the short line that stands for it is drawn, in points.
+    var sample: CGFloat {
+        switch self {
+        case .fine: return 2
+        case .medium: return 4.5
+        case .bold: return 9
+        }
+    }
+}
+
+/// Choosing the pen's line: three short lines, each as thick (in proportion)
+/// as the line it picks. The one in ink is the pen's; the others are pale.
+/// They are pictures and not words because a line shows its own thickness
+/// better than "medium" does, and three words would not fit beside the colour
+/// on a phone. A screen reader hears the words.
+struct LineChoice: View {
+    @Environment(\.handStyle) private var style
+    /// A Binding: this view reads the pen's line and sets it, but the page owns it.
+    @Binding var weight: LineWeight
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(LineWeight.allCases, id: \.self) { choice in
+                Button {
+                    Haptic.tick()
+                    weight = choice
+                } label: {
+                    // Capsule is a line with round ends, like the pen's.
+                    Capsule()
+                        .fill(weight == choice ? style.ink : style.faint)
+                        .frame(width: 22, height: choice.sample)
+                        // The line is small; the place to tap is not.
+                        .frame(width: 36, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressedStyle())
+                .accessibilityLabel("Draw the next strokes with a \(choice.name) line")
+                .accessibilityAddTraits(weight == choice ? .isSelected : [])
+            }
+        }
+    }
+}
+
 /// Small grey text: a count, a hint.
-private struct Small: View {
+struct Small: View {
     @Environment(\.handStyle) private var style
     let text: String
 
@@ -1006,7 +1085,7 @@ private struct Line: View {
 }
 
 /// Dims a word while the finger is on it. No background, no shape: it is just a word.
-private struct PressedStyle: ButtonStyle {
+struct PressedStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.6 : 1)
