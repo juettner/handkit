@@ -19,7 +19,7 @@ apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 | `Hand`, `Glyph` | The data. Plain `Codable` JSON: ship it in the app, save it, or send it over a network. |
 | `Handwriting` | The view. `Handwriting(text:hand:)` writes a line with the pen. |
 | `Written` | The arithmetic behind the view: where each stroke goes and when. No views; testable. |
-| `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): draw them on the editor's "a drawing, by name" line. |
+| `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): pass their names to `HandEditor(drawings:)` and they get a row of their own on the drawing page. |
 | `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. |
 | `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. iOS only. |
 | `Tools/hand_font.py` | Turns a `hand.json` into a real `.ttf`, for text that cannot be drawn stroke by stroke (a text field being typed in). |
