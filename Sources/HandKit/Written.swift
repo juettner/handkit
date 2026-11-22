@@ -53,6 +53,11 @@ public enum Pen {
     public static let scribbleChance: Double = 0.2
     /// How long ink takes to dry.
     public static let dryTime: TimeInterval = 0.7
+    /// How much slower than a letter a signature is made. A signature is one
+    /// long flourish; at the pace of the letters it would be over in a blink.
+    public static let signatureCare: Double = 4
+    /// The space between the last line of writing and the top of the signature.
+    public static let signatureGap: CGFloat = 0.6
 }
 
 /// One pen stroke, placed on the page and on the clock.
@@ -80,7 +85,13 @@ public struct Written {
     /// `playful` allows the rare drawings and the scribbles; without it the
     /// line is written plainly. `seed` changes which drawings are picked, for
     /// writing the same text a different way.
-    public init(_ text: String, hand: Hand, xHeight: CGFloat, width: CGFloat, lettersPerSecond: Double, playful: Bool = true, seed: Int = 0) {
+    ///
+    /// `signatures` are drawings of one person's signature (made on
+    /// SignaturePad). One of them is put under the writing, on the left, after
+    /// everything else. Which one depends on the text and the seed, so the
+    /// same note is always signed the same way and two notes usually are not.
+    /// The text may be empty: then the signature is all there is.
+    public init(_ text: String, hand: Hand, xHeight: CGFloat, width: CGFloat, lettersPerSecond: Double, playful: Bool = true, seed: Int = 0, signatures: [Glyph] = []) {
         var random = Seeded(seed == 0 ? text : "\(text)#\(seed)")
         // Words are split at any white space. A line break in the text is kept:
         // the word after it starts a new line on the page.
@@ -206,6 +217,47 @@ public struct Written {
             previous = word.last
         }
 
+        // The signature, under everything. Its random number is asked for last,
+        // so having one never changes how the letters above it come out.
+        var signedTo: CGFloat? = nil
+        let signable = signatures.filter { glyph in glyph.points.contains { !$0.isEmpty } }
+        if !signable.isEmpty {
+            let glyph = signable[Int(random.unit() * Double(signable.count)) % signable.count]
+            let every = glyph.points.flatMap { $0 }
+            let left = every.map(\.x).min() ?? 0
+            let right = every.map(\.x).max() ?? 0
+            let top = every.map(\.y).min() ?? 0
+            let bottom = every.map(\.y).max() ?? 0
+            // Drawn at the size it was signed, against the letters; smaller only if the page is too narrow for it.
+            let natural = max(right - left, 0.01) * xHeight
+            let unit = xHeight * min(1, width / natural)
+            let nib = Pen.nib * unit
+            let written = !pending.isEmpty
+            let above = written ? baseline + (Pen.descent + Pen.signatureGap) * xHeight : nib
+            // `top` is how far the ink reaches above its own baseline (a negative number).
+            let base = above - top * unit
+
+            if written { clock += 6 }
+            starts.append(clock)
+            let began = clock
+            for (strokeIndex, stroke) in glyph.points.enumerated() where !stroke.isEmpty {
+                if strokeIndex > 0 { clock += 0.3 * Pen.signatureCare }
+                var length: CGFloat = 0
+                for i in 1..<max(1, stroke.count) {
+                    length += hypot(stroke[i].x - stroke[i - 1].x, stroke[i].y - stroke[i - 1].y)
+                }
+                let beats = (0.25 + 0.5 * pow(Double(length), 0.75)) * Pen.signatureCare
+                let placed = stroke.map { CGPoint(x: ($0.x - left) * unit, y: base + $0.y * unit) }
+                pending.append((placed, clock, beats, 0.95, nib, glyph.color(of: strokeIndex)))
+                clock += beats
+            }
+            // A letter takes about two beats, pauses included. Counting the
+            // signature as that many letters keeps the writing above it at its usual pace.
+            letterCount += max(4, Int(((clock - began) / 2).rounded()))
+            widest = max(widest, (right - left) * unit)
+            signedTo = base + bottom * unit + nib
+        }
+
         // Scale the beats so the line takes as long as that many letters should.
         let seconds = clock > 0 && lettersPerSecond > 0
             ? max(0.4, Double(letterCount) / lettersPerSecond) / clock
@@ -215,7 +267,7 @@ public struct Written {
         }
         wordStarts = starts.map { $0 * seconds }
         duration = clock * seconds
-        size = CGSize(width: widest, height: baseline + Pen.descent * xHeight)
+        size = CGSize(width: widest, height: signedTo ?? baseline + Pen.descent * xHeight)
     }
 
     /// A finger leaves a trail of points. Joining them with straight lines
