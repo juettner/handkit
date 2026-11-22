@@ -75,7 +75,11 @@ line already written), `haptics`, `playful` (the rare drawings and scribbles),
 `seed` (write the same text a different way), `looseness` (how unevenly the
 letters are put down; 1 is the usual hand), `slant` (how far they lean
 forward; 0.15 is a hurry), `dryTime` (how long the ink stays wet and dark
-behind the nib) and `onDone`.
+behind the nib), `mirrored` (written backwards, for a mirror), `weather`
+(`.rain` lets the ink run a little down the page, `.sun` dries it pale),
+`words` (holds the pen: it writes only that many words and waits for the
+number to go up, so an app can release a word for each step taken) and
+`onDone`.
 
 **Crossing out.** Put two tildes on each side of a word, as in
 `"you looked ~~nice~~ incredible"`, and the pen writes it, stops for a
