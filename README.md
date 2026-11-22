@@ -1,0 +1,114 @@
+# HandKit
+
+Handwriting as data, and a pen that writes it.
+
+A handwriting font looks too clean: every "e" is the same "e". HandKit keeps
+the pen strokes you actually drew, letter by letter, and writes a line with
+them stroke by stroke, in the order and direction you made them. Each letter
+is nudged a little differently, repeated letters take turns between your
+drawings of them, a rare drawing (an "i" dotted with a heart) turns up now
+and then, and sometimes a scribble follows the line.
+
+Pulled out of [your-person](https://github.com/juettner/your-person) so other
+apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
+
+## What is in it
+
+| | |
+| --- | --- |
+| `Hand`, `Glyph` | The data. Plain `Codable` JSON: ship it in the app, save it, or send it over a network. |
+| `Handwriting` | The view. `Handwriting(text:hand:)` writes a line with the pen. |
+| `Written` | The arithmetic behind the view: where each stroke goes and when. No views; testable. |
+| `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. |
+| `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. iOS only. |
+| `Tools/hand_font.py` | Turns a `hand.json` into a real `.ttf`, for text that cannot be drawn stroke by stroke (a text field being typed in). |
+
+## Adding it to an app
+
+In Xcode: **File > Add Package Dependencies...**, then either paste this
+repository's URL, or choose **Add Local...** and pick this folder if it sits
+next to your app on disk (handy while both are changing). Tick the `HandKit`
+library for your app target.
+
+## Using it
+
+```swift
+import HandKit
+import SwiftUI
+
+struct Note: View {
+    @ObservedObject private var hands = HandStore.shared
+
+    var body: some View {
+        if let hand = hands.active, hand.covers("good morning, love") {
+            Handwriting(text: "good morning, love", hand: hand, size: 30)
+        } else {
+            Text("good morning, love")   // no hand shipped yet, or a letter is missing
+        }
+    }
+}
+```
+
+`Handwriting` takes the hand as a value, so it does not care where the hand
+came from. One fetched from a server works the same way:
+
+```swift
+let hand = Hand(data: bytesFromTheServer)
+```
+
+Options on `Handwriting`: `size` (the point size a typed line of the same
+height would have), `ink` (colour), `speed` (letters per second; 0 shows the
+line already written), `haptics`, `playful` (the rare drawings and scribbles),
+`seed` (write the same text a different way) and `onDone`.
+
+A character the hand has no drawing for is left out. `hand.covers(text)` says
+whether a text can be written whole; `hand.missing(in: text)` says which
+characters cannot.
+
+## Drawing a hand
+
+Show `HandEditor()` somewhere you can reach it. To keep it to yourself, only
+in Debug builds:
+
+```swift
+#if DEBUG
+.sheet(isPresented: $drawing) { HandEditor() }
+#endif
+```
+
+1. Draw each character on the ruled square. "keep" moves on; "again" keeps it
+   and lets you draw the same character once more (two or three of each stops
+   repeated letters looking stamped); "rarely" keeps it as a now-and-then
+   drawing.
+2. "try it" writes a sentence with what you have so far.
+3. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
+4. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
+
+Letters drawn on the device win over the shipped file, so you see your work
+as you go. A hand drawn elsewhere (an iPad and a Pencil) comes in with "use a
+hand file".
+
+To match your app's look, pass a `HandStyle` (colours and one typeface):
+
+```swift
+var style = HandStyle.journal
+style.font = { .custom("SpecialElite-Regular", size: $0) }
+HandEditor(style: style)
+```
+
+## The font tool
+
+```bash
+uv run Tools/hand_font.py my-hand.json -o Hand.ttf --family "My Hand"
+```
+
+(`uv` installs fonttools and shapely for the run. Without it: `pip install
+fonttools shapely`, then `python3 Tools/hand_font.py ...`.) The tool reads the
+pen's sizes out of `Sources/HandKit/Written.swift`, so the font and the pen
+agree. Colour is lost: a font is one colour.
+
+## Tests
+
+```bash
+swift test
+```
