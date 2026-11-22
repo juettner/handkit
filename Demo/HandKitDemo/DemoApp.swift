@@ -46,7 +46,7 @@ struct DemoView: View {
     private let style = HandStyle.journal
 
     /// Pictures kept in the hand beside the letters. P.S. shows these two as its envelopes.
-    static let pictures = ["envelope-sealed", "envelope-open"]
+    static let pictures = ["envelope-sealed", "envelope-open", "doodle"]
 
     /// The signatures, kept in the hand as a drawing named "signature", so
     /// they are saved with it. `Binding(get:set:)` is a pair of functions the

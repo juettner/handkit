@@ -19,6 +19,7 @@ apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 | `Hand`, `Glyph` | The data. Plain `Codable` JSON: ship it in the app, save it, or send it over a network. |
 | `Handwriting` | The view. `Handwriting(text:hand:)` writes a line with the pen. |
 | `Written` | The arithmetic behind the view: where each stroke goes and when. No views; testable. |
+| `Sketch` | The same drawing, made by the pen while you watch. |
 | `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): pass their names to `HandEditor(drawings:)` and they get a row of their own on the drawing page. |
 | `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. |
 | `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. It also asks for the app's icon (the "app icon" entry in the row of pictures): there the square is the icon, and "send the icon" hands over the 1024 x 1024 `icon.png`. `HandEditor(icon: false)` leaves that out. iOS only. |
@@ -71,7 +72,26 @@ let hand = Hand(data: bytesFromTheServer)
 Options on `Handwriting`: `size` (the point size a typed line of the same
 height would have), `ink` (colour), `speed` (letters per second; 0 shows the
 line already written), `haptics`, `playful` (the rare drawings and scribbles),
-`seed` (write the same text a different way) and `onDone`.
+`seed` (write the same text a different way), `looseness` (how unevenly the
+letters are put down; 1 is the usual hand), `slant` (how far they lean
+forward; 0.15 is a hurry), `dryTime` (how long the ink stays wet and dark
+behind the nib) and `onDone`.
+
+**Crossing out.** Put two tildes on each side of a word, as in
+`"you looked ~~nice~~ incredible"`, and the pen writes it, stops for a
+moment, and draws a line through it before going on. The tildes are never
+written. `Hand.unstruck(text)` gives the words without the marks (for
+reading aloud, or for showing where nothing can be struck through), and
+`Hand.struck(text)` the pieces and which of them are crossed out.
+
+**A drawing, drawn.** `GlyphView` shows a named drawing as a picture;
+`Sketch` has the pen make it while you watch, stroke by stroke:
+
+```swift
+if let doodle = hand.drawings(named: "doodle").first {
+    Sketch(doodle, duration: 1.4).frame(width: 60, height: 60)
+}
+```
 
 A character the hand has no drawing for is left out. `hand.covers(text)` says
 whether a text can be written whole; `hand.missing(in: text)` says which

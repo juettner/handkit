@@ -24,6 +24,11 @@
 //  "th" say, can be drawn as one piece under the key "th", and the pen then
 //  uses that piece wherever those letters meet (see `pieces(of:)`).
 //
+//  Words can be crossed out. Text between two pairs of tildes, as in
+//  "you looked ~~nice~~ incredible", is written and then struck through, the
+//  way a second thought looks on paper (see `struck(_:)`). The tildes
+//  themselves are never written.
+//
 //  Units. Everything is measured in x-heights: the height of a lower-case
 //  "x". The baseline is y = 0 and y grows downwards, so the body of an "a"
 //  runs from -1 to 0, a "d" reaches up to about -1.8 and a "g" hangs down to
@@ -241,7 +246,7 @@ public struct Hand: Codable, Equatable {
 
     /// True when every word of the text can be written.
     public func covers(_ text: String) -> Bool {
-        let words = Hand.spelled(text).split(whereSeparator: \.isWhitespace)
+        let words = Hand.spelled(Hand.unstruck(text)).split(whereSeparator: \.isWhitespace)
         return !words.isEmpty && words.allSatisfy { pieces(of: String($0)) != nil }
     }
 
@@ -251,7 +256,7 @@ public struct Hand: Codable, Equatable {
     public func missing(in text: String) -> [Character] {
         var seen = Set<Character>()
         var out: [Character] = []
-        for character in Hand.spelled(text) where !character.isWhitespace {
+        for character in Hand.spelled(Hand.unstruck(text)) where !character.isWhitespace {
             // A character can fold to more than one ("ß" does not, but be safe): all must be drawn.
             let drawn = Hand.plain(character).allSatisfy { drawings(for: $0) != nil }
             if !drawn && seen.insert(character).inserted { out.append(character) }
@@ -262,6 +267,36 @@ public struct Hand: Codable, Equatable {
     /// The text as the pen will write it: an ellipsis becomes three full stops.
     public static func spelled(_ text: String) -> String {
         text.replacingOccurrences(of: "\u{2026}", with: "...")
+    }
+
+    /// The mark that opens and closes a crossing-out: "~~nice~~".
+    public static let strike = "~~"
+
+    /// The text cut at its crossing-out marks: each piece, and whether it is
+    /// crossed out. The marks themselves are gone. A mark with no partner is
+    /// not a mark: it is left in the text as it was typed.
+    ///
+    ///     Hand.struck("you looked ~~nice~~ incredible")
+    ///     // ("you looked ", false), ("nice", true), (" incredible", false)
+    public static func struck(_ text: String) -> [(text: String, struck: Bool)] {
+        var parts = text.components(separatedBy: strike)
+        // Marks come in pairs, so a well-formed text cuts into an odd number of parts.
+        // An even number means the last mark never closed: put it back.
+        if parts.count % 2 == 0 {
+            let tail = parts.removeLast()
+            parts[parts.count - 1] += strike + tail
+        }
+        var out: [(text: String, struck: Bool)] = []
+        for (index, part) in parts.enumerated() where !part.isEmpty {
+            out.append((part, index % 2 == 1))
+        }
+        return out
+    }
+
+    /// The text with its crossing-out marks taken away and the words kept:
+    /// what to read aloud, or to show where nothing can be struck through.
+    public static func unstruck(_ text: String) -> String {
+        struck(text).map(\.text).joined()
     }
 
     /// The key a character is looked up under: curly quotes and long dashes

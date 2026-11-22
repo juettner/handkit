@@ -18,6 +18,14 @@
 //  whatever was doodled, follows the line. Lines that should stay plain turn
 //  both off with `playful`.
 //
+//  A word between crossing-out marks ("~~nice~~", see `Hand.struck`) is
+//  written like any other, and then, after a moment's second thought, a line
+//  is drawn through it.
+//
+//  `looseness` and `slant` change the mood of the hand without changing the
+//  drawings: a loose hand puts its letters down less evenly, and a slanted
+//  one leans forward, as writing does in a hurry.
+//
 //  The same line is always written the same way (a seeded generator keyed on
 //  the text), so nothing shimmers when the page redraws.
 //
@@ -54,6 +62,10 @@ public enum Pen {
     public static let scribbleChance: Double = 0.2
     /// How long ink takes to dry.
     public static let dryTime: TimeInterval = 0.7
+    /// How much wider a stroke is while its ink is wet, as a share of its width.
+    public static let wetSpread: CGFloat = 0.12
+    /// Where the line through a crossed-out word runs, above the baseline.
+    public static let strikeHeight: CGFloat = 0.48
     /// How much slower than a letter a signature is made. A signature is one
     /// long flourish; at the pace of the letters it would be over in a blink.
     public static let signatureCare: Double = 4
@@ -83,26 +95,68 @@ public struct Written {
     /// When each word starts, for the haptic ticks.
     public private(set) var wordStarts: [TimeInterval] = []
 
+    /// The text as words: split at any white space, with the crossing-out
+    /// marks taken out. `struck` holds the numbers of the words that are
+    /// crossed out, and `breaks` the numbers of the words that follow a line
+    /// break in the text (each starts a new line on the page).
+    static func words(of text: String) -> (words: [String], struck: Set<Int>, breaks: Set<Int>) {
+        var words: [String] = []
+        var struck = Set<Int>()
+        var breaks = Set<Int>()
+        var word = ""
+        var wordStruck = false
+        var lineBroke = false
+        // A space after the last character makes the loop end every word the same way.
+        let parts = Hand.struck(Hand.spelled(text)) + [(text: " ", struck: false)]
+        for part in parts {
+            for character in part.text {
+                if !character.isWhitespace {
+                    word.append(character)
+                    // Crossed out in part is crossed out: a line through half a word reads as a slip of the pen.
+                    if part.struck { wordStruck = true }
+                    continue
+                }
+                if !word.isEmpty {
+                    if lineBroke && !words.isEmpty { breaks.insert(words.count) }
+                    if wordStruck { struck.insert(words.count) }
+                    words.append(word)
+                    word = ""
+                    wordStruck = false
+                    lineBroke = false
+                }
+                if character.isNewline { lineBroke = true }
+            }
+        }
+        return (words, struck, breaks)
+    }
+
     /// `playful` allows the rare drawings and the scribbles; without it the
     /// line is written plainly. `seed` changes which drawings are picked, for
-    /// writing the same text a different way.
+    /// writing the same text a different way. `looseness` is how unevenly
+    /// the letters are put down (1 is the usual hand, 0 a ruler), and `slant`
+    /// how far they lean forward, in x-heights sideways per x-height up.
     ///
     /// `signatures` are drawings of one person's signature (made on
     /// SignaturePad). One of them is put under the writing, on the left, after
     /// everything else. Which one depends on the text and the seed, so the
     /// same note is always signed the same way and two notes usually are not.
     /// The text may be empty: then the signature is all there is.
-    public init(_ text: String, hand: Hand, xHeight: CGFloat, width: CGFloat, lettersPerSecond: Double, playful: Bool = true, seed: Int = 0, signatures: [Glyph] = []) {
+    public init(
+        _ text: String,
+        hand: Hand,
+        xHeight: CGFloat,
+        width: CGFloat,
+        lettersPerSecond: Double,
+        playful: Bool = true,
+        seed: Int = 0,
+        looseness: Double = 1,
+        slant: Double = 0,
+        signatures: [Glyph] = []
+    ) {
         var random = Seeded(seed == 0 ? text : "\(text)#\(seed)")
-        // Words are split at any white space. A line break in the text is kept:
-        // the word after it starts a new line on the page.
-        var words: [String] = []
-        var breaks = Set<Int>()
-        for line in Hand.spelled(text).split(whereSeparator: \.isNewline) {
-            let found = line.split(whereSeparator: \.isWhitespace).map { String($0) }
-            if !words.isEmpty && !found.isEmpty { breaks.insert(words.count) }
-            words.append(contentsOf: found)
-        }
+        let cut = Written.words(of: text)
+        var words = cut.words
+        let breaks = cut.breaks
         // Now and then a scribble follows the line, written as one more word.
         let scribbles = random.unit() < Pen.scribbleChance
         if playful && scribbles && !words.isEmpty && !(hand.glyphs[Hand.scribble] ?? []).isEmpty {
@@ -120,6 +174,35 @@ public struct Written {
         var broken = false
         var pending: [(points: [CGPoint], start: Double, beats: Double, ink: Double, width: CGFloat, color: Color?)] = []
         var starts: [Double] = []
+        /// The words crossed out and not yet struck through: where their ink runs, row by row.
+        var toStrike: [(from: CGFloat, to: CGFloat, baseline: CGFloat)] = []
+
+        /// Draws the line through the words waiting in `toStrike`: one stroke
+        /// for each row they are on, a little unsteady, as a quick line is.
+        func strikeThrough() {
+            for (row, run) in toStrike.enumerated() {
+                // The second thought: the pen stops before it goes back.
+                clock += row == 0 ? 3 : 0.6
+                let from = run.from - 0.12 * xHeight
+                let to = run.to + 0.12 * xHeight
+                let length = Double((to - from) / xHeight)
+                let height = run.baseline - (Pen.strikeHeight + CGFloat(random.between(-0.06, 0.06))) * xHeight
+                // It climbs or falls a little from one end to the other.
+                let rise = CGFloat(random.between(-0.09, 0.09)) * xHeight
+                let steps = max(2, Int(length / 0.7))
+                var points: [CGPoint] = []
+                for step in 0...steps {
+                    let along = CGFloat(step) / CGFloat(steps)
+                    let wobble = CGFloat(random.between(-0.035, 0.035)) * xHeight
+                    points.append(CGPoint(x: from + (to - from) * along, y: height + rise * (along - 0.5) + wobble))
+                }
+                // One quick stroke: faster than a letter of the same length.
+                let beats = 0.25 + 0.3 * pow(max(0, length), 0.75)
+                pending.append((points, clock, beats, 0.95, Pen.nib * xHeight, nil))
+                clock += beats
+            }
+            toStrike = []
+        }
 
         for (number, word) in words.enumerated() {
             // Pick the drawings first, so the word's width is known before it is placed.
@@ -128,6 +211,9 @@ public struct Written {
             // Remembered until a word is really placed, in case this one turns out to be empty.
             if breaks.contains(number) { broken = true }
             if pieces.isEmpty { continue }
+            let crossedOut = cut.struck.contains(number)
+            // The words before this one were crossed out and this one is not: strike them now, before going on.
+            if !crossedOut && !toStrike.isEmpty { strikeThrough() }
             var rareUsed = false
             let letters: [Glyph] = pieces.map { piece in
                 // Both numbers are always drawn, so one letter's luck never shifts the next one's.
@@ -182,9 +268,9 @@ public struct Written {
                 if index > 0 { clock += 0.45 }
 
                 // No hand puts a letter down the same way twice.
-                let lift = CGFloat(random.between(-0.05, 0.05)) * xHeight
-                let scale = CGFloat(random.between(0.96, 1.04))
-                let tilt = CGFloat(random.between(-0.035, 0.035))
+                let lift = CGFloat(random.between(-0.05, 0.05) * looseness) * xHeight
+                let scale = CGFloat(1 + random.between(-0.04, 0.04) * looseness)
+                let tilt = CGFloat(random.between(-0.035, 0.035) * looseness)
                 let ink = min(1, max(0.72, 0.93 + lean + random.between(-0.07, 0.07)))
                 let nib = Pen.nib * xHeight * CGFloat(random.between(0.92, 1.08))
                 let origin = CGPoint(x: x, y: baseline + lift)
@@ -201,14 +287,23 @@ public struct Written {
                     let placed = stroke.map { point -> CGPoint in
                         let dx = (point.x - pivot.x) * scale
                         let dy = (point.y - pivot.y) * scale
-                        let rx = dx * cos(tilt) - dy * sin(tilt) + pivot.x
                         let ry = dx * sin(tilt) + dy * cos(tilt) + pivot.y
+                        // The slant: the higher above the baseline (y is negative there), the further forward.
+                        let rx = dx * cos(tilt) - dy * sin(tilt) + pivot.x - ry * CGFloat(slant)
                         return CGPoint(x: origin.x + rx * xHeight, y: origin.y + ry * xHeight)
                     }
                     pending.append((placed, clock, beats, ink, nib * glyph.width(of: strokeIndex), glyph.color(of: strokeIndex)))
                     clock += beats
                 }
 
+                if crossedOut {
+                    // The line will run through every letter of the word, and on through the next word if that is on the same row.
+                    if let last = toStrike.last, last.baseline == baseline {
+                        toStrike[toStrike.count - 1].to = x + advance
+                    } else {
+                        toStrike.append((x, x + advance, baseline))
+                    }
+                }
                 x += advance
                 widest = max(widest, x)
                 if index < letters.count - 1 { x += Pen.letterGap * xHeight }
@@ -217,6 +312,8 @@ public struct Written {
             }
             previous = word.last
         }
+        // The text ended on a crossed-out word.
+        if !toStrike.isEmpty { strikeThrough() }
 
         // The signature, under everything. Its random number is asked for last,
         // so having one never changes how the letters above it come out.
