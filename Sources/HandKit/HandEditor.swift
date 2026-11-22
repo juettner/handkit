@@ -636,7 +636,9 @@ public struct HandEditor: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
-        .frame(maxWidth: sizeClass == .regular ? 520 : 300)
+        // On an iPad: large for a picture or a scribble, smaller for a letter or a
+        // number, where a big square made the hand write bigger than it naturally does.
+        .frame(maxWidth: sizeClass == .regular ? (isFreeform ? 520 : 364) : 300)
         .overlay(Rectangle().stroke(style.edge, lineWidth: 1))
         .accessibilityLabel("Drawing square for \(label(character))")
     }
