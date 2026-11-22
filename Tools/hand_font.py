@@ -79,7 +79,7 @@ EDITOR_SOURCE = ROOT / "Sources" / "HandKit" / "HandEditor.swift"
 UNITS_PER_EM = 1000
 SCRIBBLE = "♡"
 # The characters the my hand page asks for, if the Swift file cannot be read.
-EDITOR_CHARACTERS = "abcdefghijklmnopqrstuvwxyz.,?'!-0123456789\":;()&/ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+EDITOR_CHARACTERS = "abcdefghijklmnopqrstuvwxyz.,?'!-0123456789\":;()&/ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%*+=~_<>[]{}|\\^`"
 # The pen's numbers, if the Swift file cannot be read. Sizes are in x-heights.
 PEN_DEFAULTS = {
     "xHeightPerSize": 0.52,
@@ -122,7 +122,8 @@ def editor_characters() -> str:
         found = re.search(r'Array\("((?:[^"\\]|\\.)*)"\)\.map', EDITOR_SOURCE.read_text())
     except OSError:
         found = None
-    return found.group(1).replace('\\"', '"') if found else EDITOR_CHARACTERS
+    # Swift writes a quote as \" and a backslash as \\: take the escaping backslash off each.
+    return re.sub(r"\\(.)", r"\1", found.group(1)) if found else EDITOR_CHARACTERS
 
 
 def smooth(points: list[tuple[float, float]], steps: int = 8) -> list[tuple[float, float]]:

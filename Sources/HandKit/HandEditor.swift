@@ -75,9 +75,10 @@
 //  The row along the top jumps to anything: "scribble", then every letter.
 //
 //  The order puts first what ordinary sentences use most: small letters, then
-//  the common punctuation, digits, the rest, and capitals last. A line is
-//  only written by hand once every character in it has been drawn, and a
-//  capital borrows the small letter until you draw it.
+//  the common punctuation, digits, the rest, capitals, and last the marks a
+//  note seldom needs ("@", "+", "#"). A line is only written by hand once
+//  every character in it has been drawn, and a capital borrows the small
+//  letter until you draw it.
 //
 //
 //  Showing it. It is an ordinary view: push it on a NavigationStack or put
@@ -180,9 +181,11 @@ public struct HandEditor: View {
     @State private var iconURL: URL? = nil
 
     /// Everything the page asks for, in the order it asks: small letters, the
-    /// common punctuation, digits, the rest, capitals, and last the scribble.
+    /// common punctuation, digits, the rest, capitals, the marks a note seldom
+    /// needs (an "@", a "+", a song title's "#"), and last the scribble.
+    /// The two backslashes are one: that is how Swift spells a backslash.
     public static let characters: [String] =
-        Array("abcdefghijklmnopqrstuvwxyz.,?'!-0123456789\":;()&/ABCDEFGHIJKLMNOPQRSTUVWXYZ").map { String($0) }
+        Array("abcdefghijklmnopqrstuvwxyz.,?'!-0123456789\":;()&/ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%*+=~_<>[]{}|\\^`").map { String($0) }
             + [Hand.scribble]
 
     /// - Parameters:
