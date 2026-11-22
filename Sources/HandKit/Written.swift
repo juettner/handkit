@@ -35,7 +35,8 @@ public enum Pen {
     /// The x-height as a share of the type size, so a written headline sits
     /// about as large as the typed one of the same size.
     public static let xHeightPerSize: CGFloat = 0.52
-    /// Stroke thickness.
+    /// Stroke thickness: the usual line. A stroke drawn finer or bolder on the
+    /// drawing page is a multiple of this (`Glyph.widths`).
     public static let nib: CGFloat = 0.13
     /// Space between letters, between words, and from one baseline to the next.
     public static let letterGap: CGFloat = 0.2
@@ -204,7 +205,7 @@ public struct Written {
                         let ry = dx * sin(tilt) + dy * cos(tilt) + pivot.y
                         return CGPoint(x: origin.x + rx * xHeight, y: origin.y + ry * xHeight)
                     }
-                    pending.append((placed, clock, beats, ink, nib, glyph.color(of: strokeIndex)))
+                    pending.append((placed, clock, beats, ink, nib * glyph.width(of: strokeIndex), glyph.color(of: strokeIndex)))
                     clock += beats
                 }
 
@@ -232,8 +233,10 @@ public struct Written {
             let natural = max(right - left, 0.01) * xHeight
             let unit = xHeight * min(1, width / natural)
             let nib = Pen.nib * unit
+            // The room left round the ink is for the boldest line in it.
+            let edge = nib * glyph.thickest
             let written = !pending.isEmpty
-            let above = written ? baseline + (Pen.descent + Pen.signatureGap) * xHeight : nib
+            let above = written ? baseline + (Pen.descent + Pen.signatureGap) * xHeight : edge
             // `top` is how far the ink reaches above its own baseline (a negative number).
             let base = above - top * unit
 
@@ -248,14 +251,14 @@ public struct Written {
                 }
                 let beats = (0.25 + 0.5 * pow(Double(length), 0.75)) * Pen.signatureCare
                 let placed = stroke.map { CGPoint(x: ($0.x - left) * unit, y: base + $0.y * unit) }
-                pending.append((placed, clock, beats, 0.95, nib, glyph.color(of: strokeIndex)))
+                pending.append((placed, clock, beats, 0.95, nib * glyph.width(of: strokeIndex), glyph.color(of: strokeIndex)))
                 clock += beats
             }
             // A letter takes about two beats, pauses included. Counting the
             // signature as that many letters keeps the writing above it at its usual pace.
             letterCount += max(4, Int(((clock - began) / 2).rounded()))
             widest = max(widest, (right - left) * unit)
-            signedTo = base + bottom * unit + nib
+            signedTo = base + bottom * unit + edge
         }
 
         // Scale the beats so the line takes as long as that many letters should.

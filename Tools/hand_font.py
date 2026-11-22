@@ -25,7 +25,8 @@ What happens to a drawing:
   1. Each stroke is smoothed exactly as the pen smooths it (a curve through
      the midpoints of the finger's points).
   2. The curve is given the nib's thickness, with round ends. A font holds
-     filled shapes, not lines, so this is the step that makes it a font.
+     filled shapes, not lines, so this is the step that makes it a font. A
+     stroke drawn with a finer or a bolder line ("widths" in the file) keeps it.
   3. The strokes of one letter are merged into one shape and written as a
      glyph, sized so the font at size N has the same x-height as the pen at
      size N.
@@ -153,8 +154,14 @@ class Drawing:
         self.rare = glyph.get("rare") is True
         self.advance = round((float(glyph.get("advance", 0)) + pen["letterGap"]) * unit)
 
+        # How thick each stroke is, as a multiple of the nib; 1 where the file does not say.
+        widths = glyph.get("widths") or []
+        usual = radius
+
         shapes = []
-        for flat in glyph.get("strokes", []):
+        for number, flat in enumerate(glyph.get("strokes", [])):
+            wide = widths[number] if number < len(widths) and widths[number] > 0 else 1
+            radius = usual * wide
             # x0, y0, x1, y1, ... with y growing downwards; a font's y grows upwards.
             points = [(bearing + flat[i] * unit, -flat[i + 1] * unit) for i in range(0, len(flat) - 1, 2)]
             line = smooth(points)

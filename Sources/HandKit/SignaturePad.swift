@@ -32,6 +32,9 @@
 //  signature that fills the page comes out about three lines of a note tall.
 //  Sign smaller and it is written smaller.
 //
+//  The three short lines beside "clear" choose the pen: fine, medium or bold.
+//  Each stroke keeps the line it was signed with, and the pen signs with it.
+//
 //  Nothing is smoothed or corrected, as on the drawing page. If a signature
 //  has more points than an app would want to send over a network, every
 //  other point is dropped until it does not; at this density the eye cannot
@@ -68,6 +71,10 @@ public struct SignaturePad: View {
 
     /// Finished strokes of the signature being made, in fractions of the page's height.
     @State private var strokes: [[CGPoint]] = []
+    /// How thick each finished stroke is, as a multiple of the usual line.
+    @State private var weights: [Double] = []
+    /// The line the pen is signing with.
+    @State private var weight = LineWeight.medium
     /// The stroke under the finger.
     @State private var current: [CGPoint] = []
     /// Which of the signatures already kept is picked, in the row above the page.
@@ -126,6 +133,7 @@ public struct SignaturePad: View {
                         .accessibilityLabel("Keep this signature")
                     Word("clear", tone: .grey, disabled: blank) { clear() }
                     Spacer()
+                    LineChoice(weight: $weight)
                 }
                 .padding(.top, 8)
 
@@ -211,13 +219,16 @@ public struct SignaturePad: View {
                 graphics.stroke(cross, with: .color(style.faint), lineWidth: 1)
 
                 // The pen is as thick here, against the line, as it will be on a note.
+                // That is the usual line; a stroke signed fine or bold is a multiple of it.
                 let nib = Pen.nib * Signing.unit * h
-                for stroke in strokes + [current] where !stroke.isEmpty {
+                for (number, stroke) in (strokes + [current]).enumerated() where !stroke.isEmpty {
                     let scaled = stroke.map { CGPoint(x: $0.x * h, y: $0.y * h) }
+                    // Finished strokes keep their line; the one under the finger shows the pen as it is now.
+                    let thick = weights.indices.contains(number) ? CGFloat(weights[number]) : weight.rawValue
                     graphics.stroke(
                         Written.smooth(scaled),
                         with: .color(style.ink),
-                        style: StrokeStyle(lineWidth: nib, lineCap: .round, lineJoin: .round)
+                        style: StrokeStyle(lineWidth: nib * thick, lineCap: .round, lineJoin: .round)
                     )
                 }
             }
@@ -239,6 +250,7 @@ public struct SignaturePad: View {
                     .onEnded { _ in
                         if !current.isEmpty && strokes.count < Signing.strokes {
                             strokes.append(current)
+                            weights.append(Double(weight.rawValue))
                         }
                         current = []
                     }
@@ -252,6 +264,7 @@ public struct SignaturePad: View {
 
     private func clear() {
         strokes = []
+        weights = []
         current = []
     }
 
@@ -266,7 +279,11 @@ public struct SignaturePad: View {
         let flat = thin.map { stroke in
             stroke.flatMap { [rounded(($0.x - left) / Signing.unit), rounded(($0.y - Signing.baseline) / Signing.unit)] }
         }
-        signatures.append(Glyph(strokes: flat, advance: max(0.12, rounded((right - left) / Signing.unit))))
+        signatures.append(Glyph(
+            strokes: flat,
+            advance: max(0.12, rounded((right - left) / Signing.unit)),
+            widths: weights.contains { $0 != 1 } ? weights : nil
+        ))
         Haptic.success()
         clear()
         picked = nil

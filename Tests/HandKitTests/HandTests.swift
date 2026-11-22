@@ -160,6 +160,45 @@ final class HandTests: XCTestCase {
         XCTAssertGreaterThan(alone.duration, 0)
     }
 
+    // MARK: - Line thickness
+
+    func testAStrokeKeepsTheLineItWasDrawnWith() throws {
+        // Two strokes: the first bold, the second in the usual line.
+        let bold = Glyph(strokes: [[0, 0, 1, 0], [0, -1, 1, -1]], advance: 1, widths: [2, 1])
+        XCTAssertEqual(bold.width(of: 0), 2)
+        XCTAssertEqual(bold.width(of: 1), 1)
+        XCTAssertEqual(bold.thickest, 2)
+        // It travels in the file, and the pen writes with it.
+        let h = Hand(glyphs: ["a": [bold]])
+        let back = try XCTUnwrap(Hand(data: try XCTUnwrap(h.data())))
+        XCTAssertEqual(back, h)
+        let written = Written("a", hand: back, xHeight: 10, width: 500, lettersPerSecond: 10, playful: false)
+        XCTAssertEqual(written.marks.count, 2)
+        XCTAssertEqual(written.marks[0].width, written.marks[1].width * 2, accuracy: 0.001)
+    }
+
+    func testADrawingWithNoWidthsIsInTheUsualLine() throws {
+        // A file from before line thickness existed.
+        let old = try XCTUnwrap(Hand(data: Data(#"{"glyphs":{"a":[{"strokes":[[0,0,1,0]],"advance":1}]}}"#.utf8)))
+        let glyph = try XCTUnwrap(old.glyphs["a"]?.first)
+        XCTAssertNil(glyph.widths)
+        XCTAssertEqual(glyph.width(of: 0), 1)
+        XCTAssertEqual(glyph.thickest, 1)
+        // And nothing about thickness is written back into it.
+        XCTAssertFalse(String(decoding: try XCTUnwrap(old.data()), as: UTF8.self).contains("widths"))
+        // A list that is too short, or holds nonsense, falls back to the usual line.
+        let odd = Glyph(strokes: [[0, 0, 1, 0], [0, 0, 1, 0]], advance: 1, widths: [0])
+        XCTAssertEqual(odd.width(of: 0), 1)
+        XCTAssertEqual(odd.width(of: 1), 1)
+    }
+
+    func testABoldSignatureIsGivenTheRoomItsLineTakes() {
+        let bold = Glyph(strokes: [[0, -3, 2, 1]], advance: 2, widths: [2])
+        let alone = Written("", hand: Hand(), xHeight: 10, width: 500, lettersPerSecond: 10, signatures: [bold])
+        XCTAssertEqual(alone.marks[0].width, 2 * Pen.nib * 10, accuracy: 0.001)
+        XCTAssertEqual(alone.size.height, 40 + 2 * 2 * Pen.nib * 10, accuracy: 0.001)
+    }
+
     func testASignatureShrinksToFitANarrowPage() {
         let narrow = Written("", hand: Hand(), xHeight: 10, width: 10, lettersPerSecond: 10, signatures: [signature])
         XCTAssertEqual(narrow.size.width, 10, accuracy: 0.001)

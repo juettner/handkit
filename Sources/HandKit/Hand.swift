@@ -35,6 +35,10 @@
 //
 //      { "glyphs": { "a": [ { "strokes": [[x0, y0, x1, y1, ...]], "advance": 0.8 } ] } }
 //
+//  A stroke can also carry its own colour and its own thickness ("colors"
+//  and "widths", one entry per stroke). Both are left out of the file when
+//  the drawing is all ordinary ink in the usual line.
+//
 //  For a Java person: two immutable-ish value classes with Jackson
 //  annotations. `Codable` is the annotation; the compiler writes the
 //  serializer.
@@ -59,7 +63,14 @@ public struct Glyph: Codable, Equatable {
     /// with -1 for ordinary ink. Left out when the whole drawing is in ink.
     public var colors: [Int]?
 
-    public init(strokes: [[Double]], advance: Double, rare: Bool? = nil, occasional: Bool? = nil, colors: [Int]? = nil) {
+    /// How thick each stroke is, in the same order as `strokes`, as a multiple
+    /// of the pen's usual line (`Pen.nib`): 1 is the usual line, 0.5 half as
+    /// thick, 2 twice. Left out when the whole drawing is in the usual line,
+    /// so files drawn before this existed read as they always did.
+    public var widths: [Double]?
+
+    public init(strokes: [[Double]], advance: Double, rare: Bool? = nil, occasional: Bool? = nil, colors: [Int]? = nil, widths: [Double]? = nil) {
+        self.widths = widths
         self.occasional = occasional
         self.strokes = strokes
         self.advance = advance
@@ -94,6 +105,19 @@ public struct Glyph: Codable, Equatable {
     public func color(of stroke: Int) -> Color? {
         guard let colors, colors.indices.contains(stroke), colors[stroke] >= 0 else { return nil }
         return Color(hex: UInt32(colors[stroke]))
+    }
+
+    /// How thick a stroke is, as a multiple of the pen's usual line. 1 unless
+    /// the stroke was drawn with a finer or a bolder line.
+    public func width(of stroke: Int) -> CGFloat {
+        guard let widths, widths.indices.contains(stroke), widths[stroke] > 0 else { return 1 }
+        return CGFloat(widths[stroke])
+    }
+
+    /// The thickest line in the drawing, as a multiple of the usual one. For
+    /// working out how much room the ink takes.
+    public var thickest: CGFloat {
+        strokes.indices.map { width(of: $0) }.max() ?? 1
     }
 
     /// The strokes as points.
