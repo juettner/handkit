@@ -33,6 +33,13 @@
 //  by name, so the font it makes matches the pen: keep each one on a line of
 //  the form `public static let name: CGFloat = 0.0`.
 //
+//  THIS FILE AND android/.../Written.kt MUST AGREE, number for number and in
+//  the order the random numbers are asked for. The generator is the same on
+//  both sides, so as long as they agree, a note is written with the same
+//  drawings of the same letters, nudged the same way, on an iPhone and on an
+//  Android phone. Change one and change the other. (The Android tests read
+//  `Pen`'s numbers out of this file and fail if the two have drifted.)
+//
 
 import SwiftUI
 

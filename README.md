@@ -12,6 +12,9 @@ and then, and sometimes a scribble follows the line.
 Pulled out of [your-person](https://github.com/juettner/your-person) so other
 apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 
+There is an Android library too, in `android/`: the same pen in Kotlin and
+Jetpack Compose, reading the same `hand.json`. See "On Android" below.
+
 ## What is in it
 
 | | |
@@ -179,6 +182,67 @@ bold. A signature keeps the line it was signed with.
 
 The demo keeps its signatures in the hand, as a drawing named "signature".
 
+## On Android
+
+`android/handkit` is the pen as an Android library: Kotlin, Jetpack Compose,
+Android 9+. One dependency, Kotlin's own JSON library.
+
+| Swift | Kotlin (`android/handkit/src/main/kotlin/com/juettner/handkit/`) |
+| --- | --- |
+| `Hand`, `Glyph` | `Hand.kt`: the same two shapes, reading and writing the same JSON |
+| `Written`, `Pen` | `Written.kt`: the same arithmetic, the same numbers |
+| `Handwriting` | `Handwriting.kt`: `Handwriting(text = "...", hand = hand)` |
+| `GlyphView`, `Sketch` | `GlyphView.kt` |
+| `HandStore` | `HandStore.kt`: reads `hand.json` from the app's `assets` |
+| `SignaturePad` | `SignaturePad.kt` |
+| `HandEditor` | not on Android. Draw the hand on an iPad; the file is the same. |
+
+```kotlin
+// Once, in Application.onCreate:
+HandStore.start(this)
+
+// In a composable:
+val hand = HandStore.shared.active
+if (hand != null && hand.covers("good morning, love")) {
+    Handwriting(text = "good morning, love", hand = hand, size = 30.dp)
+} else {
+    Text("good morning, love")   // no hand shipped yet, or a letter is missing
+}
+```
+
+**The two pens agree.** Which drawing of a letter is used, how it is nudged,
+where a line breaks and when each stroke is made all come from a random
+number generator seeded with the text, and the generator and the arithmetic
+are the same in both languages. So the same text in the same hand comes out
+the same on an iPhone and on an Android phone. `Written.swift` and
+`Written.kt` must be changed together to keep it so; both say so at the top.
+
+An app adds it by pointing its `settings.gradle.kts` at the folder:
+
+```kotlin
+include(":handkit")
+project(":handkit").projectDir = file("../../handkit/android/handkit")
+```
+
+and its own build supplies the versions of the Android, Compose and
+serialization plugins (see `android/build.gradle.kts` for the ones this was
+built with).
+
+To build it by itself and run its tests (the Swift tests, ported one for one,
+and a check of the generator against numbers worked out independently):
+
+```bash
+cd android
+```
+
+```bash
+./gradlew :handkit:testDebugUnitTest
+```
+
+Not yet done: running it on a phone. The tests cover the arithmetic; the
+drawing has been looked at in pictures drawn on a build machine (in the P.S.
+app's tests), not on a device.
+
 ## The font tool
 
 ```bash
@@ -188,10 +252,12 @@ uv run Tools/hand_font.py my-hand.json -o Hand.ttf --family "My Hand"
 (`uv` installs fonttools and shapely for the run. Without it: `pip install
 fonttools shapely`, then `python3 Tools/hand_font.py ...`.) The tool reads the
 pen's sizes out of `Sources/HandKit/Written.swift`, so the font and the pen
-agree. A stroke's thickness is kept. Colour is lost: a font is one colour.
+agree. (The Android pen keeps its own copy of those numbers, in `Written.kt`.) A stroke's thickness is kept. Colour is lost: a font is one colour.
 
 ## Tests
 
 ```bash
 swift test
 ```
+
+For the Android library, see "On Android" above.

@@ -6,3 +6,12 @@ xcuserdata/
 .DS_Store
 __pycache__/
 *.ttf
+
+# Android (the android/ folder)
+android/.gradle/
+android/build/
+android/handkit/build/
+android/local.properties
+android/.idea/
+android/.kotlin/
+*.iml
