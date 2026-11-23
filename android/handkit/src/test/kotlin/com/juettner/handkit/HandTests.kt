@@ -366,6 +366,7 @@ class HandTests {
             "occasionalChance" to Pen.occasionalChance, "scribbleChance" to Pen.scribbleChance, "dryTime" to Pen.dryTime,
             "wetSpread" to Pen.wetSpread, "strikeHeight" to Pen.strikeHeight, "signatureCare" to Pen.signatureCare,
             "signatureGap" to Pen.signatureGap,
+            "runLength" to Pen.runLength, "runTime" to Pen.runTime, "sunFade" to Pen.sunFade,
         )
         assertEquals(declared, kotlin)
     }

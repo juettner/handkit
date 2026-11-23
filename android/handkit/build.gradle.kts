@@ -39,6 +39,13 @@ android {
     }
 }
 
+// One test reads the pen's numbers out of the Swift source, to hold the Kotlin ones to them. Gradle skips
+// a test run when nothing it knows about has changed, so it has to be told that this file is something
+// the tests depend on. Otherwise a change to Written.swift would not run them again.
+tasks.withType<Test>().configureEach {
+    inputs.file(layout.projectDirectory.file("../../Sources/HandKit/Written.swift"))
+}
+
 dependencies {
     // A BOM pins the versions of all the Compose libraries to ones that go together.
     val composeBom = platform("androidx.compose:compose-bom:2026.11.01")
