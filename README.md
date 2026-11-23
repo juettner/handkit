@@ -25,6 +25,7 @@ apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 | `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. It also asks for the app's icon (the "app icon" entry in the row of pictures): there the square is the icon, and "send the icon" hands over the 1024 x 1024 `icon.png`. `HandEditor(icon: false)` leaves that out. For a picture your app shows very small, `HandEditor(drawings:labels:sizes:)` takes the size in points: the square then has a box of that shape to fill and shows each kept drawing at its real size. iOS only. |
 | `SignaturePad` | The signing page: sign on a line, keep a few. Each is a `Glyph`, and `Handwriting(signatures:)` signs under a line with one of them. iOS only. |
 | `Tools/hand_font.py` | Turns a `hand.json` into a real `.ttf`, for text that cannot be drawn stroke by stroke (a text field being typed in). |
+| `Tools/hand_svg.py` | Writes one line with the pen and keeps it as an animated `.svg`, for a web page: the strokes are drawn in order, with no script and without publishing the hand. |
 
 ## Try it
 
@@ -193,6 +194,30 @@ uv run Tools/hand_font.py my-hand.json -o Hand.ttf --family "My Hand"
 fonttools shapely`, then `python3 Tools/hand_font.py ...`.) The tool reads the
 pen's sizes out of `Sources/HandKit/Written.swift`, so the font and the pen
 agree. A stroke's thickness is kept. Colour is lost: a font is one colour.
+
+## The picture tool
+
+A web page has no pen, but it can play back a line the pen wrote. This does
+the pen's arithmetic for one text and saves the result as an SVG picture
+whose strokes are drawn one after another, at the pen's pace:
+
+```bash
+python3 Tools/hand_svg.py my-hand.json "good morning, love" -o note.svg
+```
+
+```html
+<img src="note.svg" width="412" height="96" alt="good morning, love">
+```
+
+It needs nothing but Python, and the page needs no script: the animation is
+a few lines of CSS inside the picture. The picture holds the strokes of that
+one line, so the hand file itself is not published. A stroke's colour and
+thickness are kept, and so are crossing out, the rare drawings and each
+letter's own shade of ink. `"\n"` in the text starts a new line; `--center`,
+`--size`, `--ink`, `--seed`, `--plain`, `--slant`, `--delay` and `--speed`
+(0 for a line already written) do what they do on `Handwriting`. The file's
+own notes say what is lost (it is the same every time it is shown) and how
+to show a still line to somebody who has asked for less motion.
 
 ## Tests
 
