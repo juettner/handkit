@@ -58,6 +58,19 @@ final class HandTests: XCTestCase {
         XCTAssertNil(Hand(data: Data("not a hand".utf8)))
     }
 
+    func testAHeldPenMayWriteUpToTheStartOfTheNextWord() {
+        let h = hand("a")
+        let line = Written("aa aa aa", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
+        XCTAssertEqual(line.wordStarts.count, 3)
+        // Allowed no words, the pen may not start. Allowed one, it stops where the second begins.
+        XCTAssertEqual(line.moment(afterWords: 0), 0)
+        XCTAssertEqual(line.moment(afterWords: 1), line.wordStarts[1])
+        XCTAssertGreaterThan(line.moment(afterWords: 2), line.moment(afterWords: 1))
+        // Allowed every word, or more, nothing holds it.
+        XCTAssertEqual(line.moment(afterWords: 3), .infinity)
+        XCTAssertEqual(line.moment(afterWords: 99), .infinity)
+    }
+
     func testALineWrapsAtThePageWidth() {
         let h = hand("a")
         let one = Written("aa aa", hand: h, xHeight: 10, width: 1000, lettersPerSecond: 15, playful: false)
