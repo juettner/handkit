@@ -196,7 +196,7 @@ Android 9+. One dependency, Kotlin's own JSON library.
 | --- | --- |
 | `Hand`, `Glyph` | `Hand.kt`: the same two shapes, reading and writing the same JSON |
 | `Written`, `Pen` | `Written.kt`: the same arithmetic, the same numbers |
-| `Handwriting` | `Handwriting.kt`: `Handwriting(text = "...", hand = hand)` |
+| `Handwriting` | `Handwriting.kt`: `Handwriting(text = "...", hand = hand)`, with the same `mirrored`, `weather` and `words` as the Swift one |
 | `GlyphView`, `Sketch` | `GlyphView.kt` |
 | `HandStore` | `HandStore.kt`: reads `hand.json` from the app's `assets` |
 | `SignaturePad` | `SignaturePad.kt` |
