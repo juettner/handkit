@@ -39,11 +39,11 @@ programs a font carries; iOS runs the first three without being asked):
   calt  the drawings of a letter take turns, so repeated letters do not look
         stamped. A font cannot roll dice; it walks a fixed cycle instead, and
         the same text always comes out the same, as it does from the pen.
-        Occasional drawings take turns with the usual ones here: a font
-        has no "some of the time".
-  ss01  rare drawings (the "i" with a heart). Off unless the app asks: a
-        font cannot use one "now and then", so they are opt-in. A second
-        rare drawing of a letter is ss02, and so on.
+        Only the usual drawings take turns.
+  ss01  rare and occasional drawings (the "i" with a heart). Off unless the
+        app asks: a font cannot use one "now and then" (taking turns, an
+        occasional heart would land in every other word), so they are
+        opt-in. A second such drawing of a letter is ss02, and so on.
 
 The same borrowing as Hand.swift: a missing capital uses the small letter
 (and the other way round), curly quotes and long dashes use the plain ones,
@@ -153,6 +153,7 @@ class Drawing:
         # Half the gap between letters sits on each side of the ink.
         bearing = pen["letterGap"] * unit / 2
         self.rare = glyph.get("rare") is True
+        self.occasional = glyph.get("occasional") is True
         self.advance = round((float(glyph.get("advance", 0)) + pen["letterGap"]) * unit)
 
         # How thick each stroke is, as a multiple of the nib; 1 where the file does not say.
@@ -214,8 +215,13 @@ def build(hand: dict, pen: dict[str, float], family: str = "Hand"):
     """Returns the font and a few counts for the report."""
     unit = pen["xHeightPerSize"] * UNITS_PER_EM
 
-    # The usual drawings and the rare ones, per key. A key with only rare
-    # drawings writes with those, as the pen does.
+    # The usual drawings, which take turns, and the ones kept back (rare and
+    # occasional), per key. The pen uses an occasional drawing about one time
+    # in five; a font taking turns would use it every second or third time,
+    # and a heart in every other word of a button is not what "occasional"
+    # asked for. So both kinds are opt-in here: rare ones first, then
+    # occasional ones. A key with no usual drawing writes with what it has,
+    # as the pen does.
     usual: dict[str, list[Drawing]] = {}
     rare: dict[str, list[Drawing]] = {}
     for key, glyphs in hand.get("glyphs", {}).items():
@@ -225,10 +231,10 @@ def build(hand: dict, pen: dict[str, float], family: str = "Hand"):
         drawings = [d for d in (Drawing(g, pen) for g in glyphs) if d.contours]
         if not drawings:
             continue
-        plain = [d for d in drawings if not d.rare]
-        usual[key] = plain or drawings
+        plain = [d for d in drawings if not d.rare and not d.occasional]
+        usual[key] = plain or [d for d in drawings if not d.rare] or drawings
         if plain:
-            rare[key] = [d for d in drawings if d.rare]
+            rare[key] = [d for d in drawings if d.rare] + [d for d in drawings if d.occasional]
 
     singles = sorted(k for k in usual if len(k) == 1)
     # A joined drawing is only usable where every letter in it can be typed.
@@ -391,7 +397,7 @@ def main() -> int:
     if report["joined"]:
         print(f"  joined        {' '.join(report['joined'])}")
     if report["rare"]:
-        print(f"  rare          {report['rare']} (ss01 and up, off unless asked for)")
+        print(f"  kept back     {report['rare']} rare or occasional (ss01 and up, off unless asked for)")
     if report["skipped"]:
         print(f"  left out      {' '.join(report['skipped'])}: joined letters need each single letter drawn too")
     # A capital borrows the small letter, so only a letter missing in both cases is missing.
