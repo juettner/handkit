@@ -77,6 +77,14 @@ object Pen {
     const val signatureCare: Double = 4.0
     /** The space between the last line of writing and the top of the signature. */
     const val signatureGap: Double = 0.6
+
+    // The three below are for ink the weather has got at (`Weathering` in Written.swift). The Android pen
+    // does not draw that yet; the numbers are kept here so that the two lists stay the same list.
+    /** Ink written in the rain runs: how far down the page, at most, and over how many seconds. */
+    const val runLength: Double = 0.55
+    const val runTime: Double = 5.0
+    /** Ink read in the sun has faded: how much of its darkness is left once it is dry. */
+    const val sunFade: Double = 0.5
 }
 
 /** One pen stroke, placed on the page and on the clock. */
