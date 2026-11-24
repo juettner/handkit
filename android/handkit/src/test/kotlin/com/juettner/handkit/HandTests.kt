@@ -241,6 +241,19 @@ class HandTests {
         println("usual $usual, occasional $occasional, rare $rare of 4000")
     }
 
+    @Test
+    fun aHeldPenMayWriteUpToTheStartOfTheNextWord() {
+        val line = written("aa aa aa", hand("a"))
+        assertEquals(3, line.wordStarts.size)
+        // Allowed no words, the pen may not start. Allowed one, it stops where the second begins.
+        assertEquals(0.0, line.momentAfterWords(0), 0.0)
+        assertEquals(line.wordStarts[1], line.momentAfterWords(1), 0.0)
+        assertTrue(line.momentAfterWords(2) > line.momentAfterWords(1))
+        // Allowed every word, or more, nothing holds it.
+        assertEquals(Double.POSITIVE_INFINITY, line.momentAfterWords(3), 0.0)
+        assertEquals(Double.POSITIVE_INFINITY, line.momentAfterWords(99), 0.0)
+    }
+
     // Signing
 
     /** A signature two x-heights wide that reaches three above its line and one below. */
