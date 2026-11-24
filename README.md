@@ -259,6 +259,12 @@ fonttools shapely`, then `python3 Tools/hand_font.py ...`.) The tool reads the
 pen's sizes out of `Sources/HandKit/Written.swift`, so the font and the pen
 agree. (The Android pen keeps its own copy of those numbers, in `Written.kt`.) A stroke's thickness is kept. Colour is lost: a font is one colour.
 
+Only a letter's usual drawings take turns in the font. Occasional and rare
+ones are left for the app to ask for (the OpenType features `ss01`, `ss02`
+and so on): the pen can use a drawing one time in five, but a font can only
+take turns, and a heart meant for now and then would land in every other
+word.
+
 ## The picture tool
 
 A web page has no pen, but it can play back a line the pen wrote. This does
