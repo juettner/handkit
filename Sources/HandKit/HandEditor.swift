@@ -146,6 +146,8 @@ public struct HandEditor: View {
     private let labels: [String: String]
     /// The size, in points, at which the app shows a named drawing, for those it shows small.
     private let sizes: [String: CGSize]
+    /// What to say about a picture while it is being drawn, by its name.
+    private let hints: [String: String]
     /// Whether the page asks for the app's icon.
     private let asksForIcon: Bool
 
@@ -202,6 +204,9 @@ public struct HandEditor: View {
     ///     square then has a pale box of that shape to fill, the pen is as
     ///     thick against the box as the line will be at that size, and each
     ///     kept drawing is shown beside the name at its real size.
+    ///   - hints: a sentence or two about a picture, by its name, shown under
+    ///     the square while it is being drawn, ahead of the page's own advice:
+    ///     what the picture is of and where your app shows it.
     ///   - icon: whether the page asks for the app's icon: an "app icon" entry
     ///     in the row of pictures, where the square is the icon. Turn it off
     ///     if people using your app can reach this page.
@@ -215,12 +220,14 @@ public struct HandEditor: View {
         drawings: [String] = [],
         labels: [String: String] = [:],
         sizes: [String: CGSize] = [:],
+        hints: [String: String] = [:],
         icon: Bool = true,
         onClose: (() -> Void)? = nil
     ) {
         self.drawings = drawings
         self.labels = labels
         self.sizes = sizes
+        self.hints = hints
         self.asksForIcon = icon
         _hands = ObservedObject(wrappedValue: store)
         self.style = style
@@ -264,6 +271,11 @@ public struct HandEditor: View {
     private func label(_ entry: String) -> String {
         guard let name = Hand.drawingName(of: entry) else { return entry }
         return labels[name] ?? name.replacingOccurrences(of: "-", with: " ")
+    }
+    /// What the app said about the picture being drawn, with a space after it, or nothing.
+    private var hint: String {
+        guard let name = drawingName, let said = hints[name] else { return "" }
+        return said + " "
     }
     /// The size the app shows the picture being drawn at, if it said. Nil for
     /// everything else, and for a size that is not a size.
@@ -458,15 +470,16 @@ public struct HandEditor: View {
                 }
             }
 
-            Small(isIcon
+            // What the app says about this picture, if anything, then the page's own advice.
+            Small(hint + (isIcon
                 ? "The app's icon. The square is the icon: what you draw, where you draw it, as thick as you see it. The pale outline is where the corners are cut off. Keep it, then send the icon; it replaces icon.png in the app's AppIcon.appiconset. Keep more than one and the one you tap in the row is the one sent."
                 : shownSize != nil
-                ? "A picture the app shows very small: about \(Int(shownSize?.width ?? 0)) by \(Int(shownSize?.height ?? 0)) points. Fill the pale box, with few strokes and clear gaps between them. The pen is as thick here, against the box, as the line will be there. Once kept, it is shown beside its name at its real size: if you cannot read it there, forget it and draw it simpler."
+                ? "A picture the app shows small: about \(Int(shownSize?.width ?? 0)) by \(Int(shownSize?.height ?? 0)) points. Fill the pale box, with few strokes and clear gaps between them. The pen is as thick here, against the box, as the line will be there. Once kept, it is shown beside its name at its real size: if you cannot read it there, forget it and draw it simpler."
                 : drawingName != nil
                 ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen's colour or its line for part of it. Draw it more than once with again and the app can vary them."
                 : isScribble
                 ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
-                : "Draw it the way you write it, sitting on the line. Tap a drawing in the row above to make it occasional or rare, like a heart for a dot.")
+                : "Draw it the way you write it, sitting on the line. Tap a drawing in the row above to make it occasional or rare, like a heart for a dot."))
                 .padding(.top, 8)
 
             // Letters written as one shape. Name them here, then draw them like any other.
