@@ -295,4 +295,6 @@ to show a still line to somebody who has asked for less motion.
 swift test
 ```
 
-For the Android library, see "On Android" above.
+For the Android library, see "On Android" above. Its tests also run on
+GitHub (`.github/workflows/android.yml`) whenever `android/` or
+`Written.swift` changes. The Swift tests do not: they need a Mac.
