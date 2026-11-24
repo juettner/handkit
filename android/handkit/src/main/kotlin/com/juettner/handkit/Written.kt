@@ -78,13 +78,27 @@ object Pen {
     /** The space between the last line of writing and the top of the signature. */
     const val signatureGap: Double = 0.6
 
-    // The three below are for ink the weather has got at (`Weathering` in Written.swift). The Android pen
-    // does not draw that yet; the numbers are kept here so that the two lists stay the same list.
     /** Ink written in the rain runs: how far down the page, at most, and over how many seconds. */
     const val runLength: Double = 0.55
     const val runTime: Double = 5.0
     /** Ink read in the sun has faded: how much of its darkness is left once it is dry. */
     const val sunFade: Double = 0.5
+}
+
+/** What the weather has done to the ink. `word` is how it is written down when it is kept. */
+enum class Weathering(val word: String) {
+    /** Nothing: ordinary ink. */
+    DRY("dry"),
+
+    /** The ink runs a little way down the page behind the pen, as it does on wet paper. */
+    RAIN("rain"),
+
+    /** The ink dries pale, as if the page had been left on a windowsill. */
+    SUN("sun");
+
+    companion object {
+        fun of(word: String?): Weathering = entries.firstOrNull { it.word == word } ?: DRY
+    }
 }
 
 /** One pen stroke, placed on the page and on the clock. */
@@ -140,6 +154,14 @@ class Written(
     val duration: Double
     /** When each word starts, for the haptic ticks. */
     val wordStarts: List<Double>
+
+    /**
+     * The moment up to which the pen may write when it is allowed `count`
+     * words: the start of the word after them. All of time, once every word
+     * is allowed. (A scribble and a signature each count as a word.)
+     */
+    fun momentAfterWords(count: Int): Double =
+        if (count < wordStarts.size) wordStarts[max(0, count)] else Double.POSITIVE_INFINITY
 
     /** A stroke before the beats are turned into seconds. */
     private class Pending(val points: List<Point>, val start: Double, val beats: Double, val ink: Double, val width: Double, val color: Int?)

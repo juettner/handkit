@@ -49,6 +49,17 @@
 //  must be complete (and show it another way when it is not), or
 //  `hand.missingIn(text)` to say which characters those are.
 //
+//  Three things an app can ask of the pen beyond writing:
+//
+//    mirrored   the line is written backwards, right to left, to be read in
+//               a mirror.
+//    weather    what the sky has done to the ink (Weathering): in the rain it
+//               runs a little down the page, in the sun it dries pale.
+//    words      the pen is held: it writes only as many words as this, and
+//               waits, nib on the paper, until the number goes up. The app
+//               counts something (steps, say) and passes the count. While
+//               the pen is held a tap does not finish the line.
+//
 //  It can also sign. Give it `signatures` (drawings made on SignaturePad) and
 //  the pen puts one under the writing when the words are done. With an empty
 //  text and an empty hand it writes the signature alone, which is how an app
@@ -59,6 +70,7 @@
 
 package com.juettner.handkit
 
+import android.graphics.BlurMaskFilter
 import android.provider.Settings
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
@@ -77,6 +89,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.IntrinsicMeasurable
@@ -112,6 +130,9 @@ import kotlin.math.pow
  * @param dryTime how long the ink stays wet, in seconds.
  * @param signatures one person's signature, drawn one or more times (see
  *   SignaturePad). The pen signs under the writing with one of them.
+ * @param mirrored written backwards, to be read in a mirror.
+ * @param weather what the weather has done to the ink.
+ * @param words how many words the pen may write so far, or null for a pen that is not held.
  * @param tappable whether a tap finishes the line. Off where the tap belongs to something else (a label on a card).
  * @param followsTextSize whether the writing grows with the text size chosen in the phone's settings, as type does.
  * @param onDone called once the whole line is on the page (written or tapped through).
@@ -131,6 +152,9 @@ fun Handwriting(
     slant: Double = 0.0,
     dryTime: Double = Pen.dryTime,
     signatures: List<Glyph> = emptyList(),
+    mirrored: Boolean = false,
+    weather: Weathering = Weathering.DRY,
+    words: Int? = null,
     tappable: Boolean = true,
     followsTextSize: Boolean = true,
     onDone: (() -> Unit)? = null,
@@ -154,6 +178,8 @@ fun Handwriting(
     var elapsed by remember(text) { mutableDoubleStateOf(0.0) }
     // The newest `onDone`, without restarting the clock when the caller hands over a new function object.
     val done by rememberUpdatedState(onDone)
+    // The newest count of words a held pen is allowed, read by the clock on every frame.
+    val allowed by rememberUpdatedState(words)
 
     // The clock. Starts when the view appears, and again when the text changes.
     LaunchedEffect(text) {
@@ -167,6 +193,34 @@ fun Handwriting(
         }
         elapsed = 0.0
         still = false
+        if (words != null) {
+            // A held pen. An ordinary clock would run on while the pen waits, and the next word would
+            // then appear all at once. This one only moves while the pen is allowed to: it adds up the
+            // time between frames, and stops at the start of the first word it may not write yet.
+            var time = 0.0
+            var last = withFrameNanos { it }
+            var ticked = 0
+            var told = false
+            while (true) {
+                val now = withFrameNanos { it }
+                val may = allowed ?: Int.MAX_VALUE
+                time = min(time + (now - last) / 1_000_000_000.0, plan.momentAfterWords(may))
+                last = now
+                elapsed = time
+                // A word has started if the pen is allowed it and the clock has reached it.
+                while (ticked < plan.wordStarts.size && ticked < may && time >= plan.wordStarts[ticked]) {
+                    if (haptics) Haptic.tick(view)
+                    ticked += 1
+                }
+                if (!told && time >= plan.duration) {
+                    told = true
+                    done?.invoke()
+                }
+                if (time >= plan.duration + dryTime + 0.1) break
+            }
+            still = true
+            return@LaunchedEffect
+        }
         // `withFrameNanos` waits for the next screen frame and says what time it is.
         val began = withFrameNanos { it }
         var nextWord = 0
@@ -196,11 +250,13 @@ fun Handwriting(
 
     var shaped = modifier.clearAndSetSemantics { contentDescription = spoken }
     if (tappable) {
-        // The whole line, dry, now.
+        // The whole line, dry, now. A held pen is not hurried by a tap: the app holding it decides when it may write.
         shaped = shaped.pointerInput(Unit) {
             detectTapGestures {
-                skipped = true
-                still = true
+                if (allowed == null) {
+                    skipped = true
+                    still = true
+                }
             }
         }
     }
@@ -211,25 +267,74 @@ fun Handwriting(
         measurePolicy = remember(recipe) { WritingMeasure(recipe, cache) },
         modifier = shaped.drawBehind {
             val now = if (still) Double.POSITIVE_INFINITY else elapsed
-            for (stroke in cache.strokes(recipe, this.size.width.toDouble())) {
-                val mark = stroke.mark
-                val age = now - mark.start
-                if (age <= 0) continue
-                // How much of the stroke is down. It eases out, so the pen slows into the end of a stroke.
-                val progress = if (mark.duration > 0) min(1.0, age / mark.duration) else 1.0
-                val eased = 1 - (1 - progress).pow(1.6)
-                // 1 while the stroke is being made, 0 once it has dried.
-                val wet = if (dryTime > 0) (1 - (age - mark.duration) / dryTime).coerceIn(0.0, 1.0) else 0.0
-                val colour = mark.color?.let { inkColor(it) } ?: ink
-                drawPath(
-                    path = if (eased < 1) stroke.upTo(eased) else stroke.path,
-                    color = colour.copy(alpha = colour.alpha * (mark.ink + (1 - mark.ink) * wet).toFloat()),
-                    // Wet ink stands a little proud of the paper, and sinks in as it dries.
-                    style = Stroke(width = (mark.width * (1 + Pen.wetSpread * wet)).toFloat(), cap = StrokeCap.Round, join = StrokeJoin.Round),
-                )
+            val strokes = cache.strokes(recipe, this.size.width.toDouble())
+            // Mirrored: flip the page left to right about its middle, and draw as usual.
+            scale(scaleX = if (mirrored) -1f else 1f, scaleY = 1f) {
+                for (stroke in strokes) {
+                    val mark = stroke.mark
+                    val age = now - mark.start
+                    if (age <= 0) continue
+                    // How much of the stroke is down. It eases out, so the pen slows into the end of a stroke.
+                    val progress = if (mark.duration > 0) min(1.0, age / mark.duration) else 1.0
+                    val eased = 1 - (1 - progress).pow(1.6)
+                    // 1 while the stroke is being made, 0 once it has dried.
+                    val wet = if (dryTime > 0) (1 - (age - mark.duration) / dryTime).coerceIn(0.0, 1.0) else 0.0
+                    // In the sun the ink goes down dark like any other and loses its strength as it dries.
+                    val strength = if (weather == Weathering.SUN) Pen.sunFade + (1 - Pen.sunFade) * wet else 1.0
+                    val colour = mark.color?.let { inkColor(it) } ?: ink
+                    drawPath(
+                        path = if (eased < 1) stroke.upTo(eased) else stroke.path,
+                        color = colour.copy(alpha = colour.alpha * ((mark.ink + (1 - mark.ink) * wet) * strength).toFloat()),
+                        // Wet ink stands a little proud of the paper, and sinks in as it dries.
+                        style = Stroke(width = (mark.width * (1 + Pen.wetSpread * wet)).toFloat(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+                    )
+                }
+                if (weather == Weathering.RAIN) drawRun(strokes, now, ink, recipe.xHeight)
             }
         },
     )
+}
+
+/**
+ * Rain: behind the pen, each stroke bleeds a little way down the page. The
+ * run is drawn as three soft copies of the stroke, each lower and fainter
+ * than the last, over the writing.
+ *
+ * Compose's own drawing calls have no blur for a single stroke, so this goes
+ * one level down, to the Android canvas Compose itself draws on, whose paint
+ * can carry a "mask filter" that softens whatever it draws.
+ */
+private fun DrawScope.drawRun(strokes: List<DrawnStroke>, now: Double, ink: Color, xHeight: Double) {
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        style = android.graphics.Paint.Style.STROKE
+        strokeCap = android.graphics.Paint.Cap.ROUND
+        strokeJoin = android.graphics.Paint.Join.ROUND
+        maskFilter = BlurMaskFilter(max(0.5f, (xHeight * 0.07).toFloat()), BlurMaskFilter.Blur.NORMAL)
+    }
+    drawIntoCanvas { canvas ->
+        val paper = canvas.nativeCanvas
+        for ((index, stroke) in strokes.withIndex()) {
+            val mark = stroke.mark
+            // The run starts when the stroke is finished, and takes `runTime` to get where it is going.
+            val age = now - mark.start - mark.duration
+            if (age <= 0) continue
+            val soaked = min(1.0, age / Pen.runTime)
+            // Not every stroke runs the same distance. The stroke's number is scrambled into
+            // a share between 0 and 1, the same one every time, so the page does not shimmer.
+            val luck = ((index.toLong() * 2_654_435_761L) % 97) / 97.0
+            val run = xHeight * Pen.runLength * soaked * (0.25 + 0.75 * luck)
+            val colour = mark.color?.let { inkColor(it) } ?: ink
+            paint.strokeWidth = (mark.width * 1.3).toFloat()
+            for (step in 1..3) {
+                val part = step / 3.0
+                paint.color = colour.copy(alpha = (mark.ink * 0.2 * (1.25 - part)).toFloat()).toArgb()
+                paper.save()
+                paper.translate(0f, (run * part).toFloat())
+                paper.drawPath(stroke.path.asAndroidPath(), paint)
+                paper.restore()
+            }
+        }
+    }
 }
 
 /** Everything that decides how a line comes out, apart from the width of the page. */
