@@ -197,12 +197,18 @@ public struct Handwriting: View {
     }
 
     private var xHeight: CGFloat { size * Pen.xHeightPerSize * textScale }
+    /// How far past its own edges the writing may be drawn: half the height of a small letter.
+    private var bleed: CGFloat { (xHeight * 0.5).rounded(.up) }
 
     public var body: some View {
         WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures) {
             TimelineView(.animation(paused: still)) { context in
                 Canvas { graphics, canvasSize in
-                    let line = written(for: canvasSize.width)
+                    // The canvas is larger than the line by `bleed` on every side (see below), so the line's
+                    // own corner is that far in from the canvas's.
+                    let width = canvasSize.width - 2 * bleed
+                    graphics.translateBy(x: bleed, y: bleed)
+                    let line = written(for: width)
                     let elapsed: TimeInterval
                     if still {
                         elapsed = .infinity
@@ -215,11 +221,17 @@ public struct Handwriting: View {
                     }
                     if mirrored {
                         // Flip the page left to right: move its right edge to the left, then draw with x running backwards.
-                        graphics.translateBy(x: canvasSize.width, y: 0)
+                        graphics.translateBy(x: width, y: 0)
                         graphics.scaleBy(x: -1, y: 1)
                     }
                     draw(line, at: elapsed, in: &graphics)
                 }
+                // A canvas draws nothing outside itself, and a line starts at its very left edge: the
+                // pen has a width, a letter can be tilted, and a tail can swing back, so a sliver of the
+                // first letter of a line would be shaved off. A negative padding makes the canvas that
+                // much larger than the space the view takes, so the ink has somewhere to go. The view
+                // still takes the same space as before.
+                .padding(-bleed)
             }
         }
         .contentShape(Rectangle())
