@@ -1,0 +1,51 @@
+# Builds the Android library and runs its tests, whenever something under
+# android/ changes.
+#
+# One Swift file is on the list too: Written.swift holds the pen's numbers,
+# and one of the Android tests reads that file to check that Written.kt has
+# the same ones. So changing a number in Swift runs the Android tests, which
+# is how the two pens are kept writing alike.
+#
+# The Swift package itself is not tested here: that needs a Mac runner.
+name: Android
+
+on:
+  push:
+    paths:
+      - android/**
+      - Sources/HandKit/Written.swift
+      - .github/workflows/android.yml
+  pull_request:
+    paths:
+      - android/**
+      - Sources/HandKit/Written.swift
+      - .github/workflows/android.yml
+
+# This job only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  pen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      # Installs nothing; it keeps Gradle's downloads between runs, so the second run is much faster than the first.
+      - uses: gradle/actions/setup-gradle@v4
+      # The tests, Android's code checker, and a Release build of the library.
+      - run: ./gradlew :handkit:testDebugUnitTest :handkit:lintDebug :handkit:assembleRelease --console=plain
+      # If something failed, keep the reports so they can be read from the run's page.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: reports
+          path: android/handkit/build/reports
+          if-no-files-found: ignore
