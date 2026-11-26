@@ -73,6 +73,59 @@ public struct GlyphView: View {
     }
 }
 
+/// One drawing of a letter, small, sitting on its line at the size it has
+/// against the ruling: a comma looks like a comma, not like a letter-sized
+/// blob, which is what `GlyphView` (fitted to its frame) would make of it.
+/// For a page that shows a whole alphabet, one box a letter.
+///
+///     LetterView(glyph).frame(width: 52, height: 52)
+///
+/// The frame's height is the ruled square's, made small: the baseline is two
+/// thirds of the way down and a small letter is about a quarter of it tall.
+public struct LetterView: View {
+    let glyph: Glyph
+    var ink: Color
+    /// The color of the line the letter sits on, or nil for no line.
+    var rule: Color?
+
+    /// The ruled square's two numbers (Ruling, in HandEditor.swift), as shares of the height.
+    private static let baseline: CGFloat = 0.66
+    private static let unit: CGFloat = 0.27
+
+    public init(_ glyph: Glyph, ink: Color = HandStyle.journal.ink, rule: Color? = nil) {
+        self.glyph = glyph
+        self.ink = ink
+        self.rule = rule
+    }
+
+    public var body: some View {
+        Canvas { graphics, size in
+            let unit = LetterView.unit * size.height
+            let base = LetterView.baseline * size.height
+            if let rule {
+                var line = Path()
+                line.move(to: CGPoint(x: 0, y: base))
+                line.addLine(to: CGPoint(x: size.width, y: base))
+                graphics.stroke(line, with: .color(rule), lineWidth: 1)
+            }
+            // Centered from left to right; a letter wider than the box is made to fit.
+            let wide = CGFloat(glyph.advance) * unit
+            let scale = wide > size.width * 0.9 ? size.width * 0.9 / wide : 1
+            let left = (size.width - wide * scale) / 2
+            for (number, stroke) in glyph.points.enumerated() where !stroke.isEmpty {
+                let placed = stroke.map { CGPoint(x: left + $0.x * unit * scale, y: base + $0.y * unit * scale) }
+                graphics.stroke(
+                    Written.smooth(placed),
+                    with: .color(glyph.color(of: number) ?? ink),
+                    style: StrokeStyle(lineWidth: max(1, Pen.nib * unit * scale * glyph.width(of: number)), lineCap: .round, lineJoin: .round)
+                )
+            }
+        }
+        // One drawing among many: the page that shows it says what it is.
+        .accessibilityHidden(true)
+    }
+}
+
 /// One drawing, made by the pen while you watch.
 public struct Sketch: View {
     let glyph: Glyph
