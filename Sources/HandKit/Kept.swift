@@ -29,7 +29,7 @@
 //  The names are short because there are thousands of strokes in a long
 //  note. `p` points, `s` the beat it starts on, `d` how many beats it takes,
 //  `i` how dark the ink is once dry, `w` the thickness of the line, `c` its
-//  colour as 0xRRGGBB (left out for ordinary ink).
+//  color as 0xRRGGBB (left out for ordinary ink).
 //
 //  A kept line does not reflow. It was broken for the page it was first
 //  written on, and on a wider page it keeps those lines, as a letter on

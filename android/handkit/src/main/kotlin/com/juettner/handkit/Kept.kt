@@ -29,7 +29,7 @@
 //  The names are short because there are thousands of strokes in a long
 //  note. `p` points, `s` the beat it starts on, `d` how many beats it takes,
 //  `i` how dark the ink is once dry, `w` the thickness of the line, `c` its
-//  colour as 0xRRGGBB (left out for ordinary ink).
+//  color as 0xRRGGBB (left out for ordinary ink).
 //
 //  A kept line does not reflow. It was broken for the page it was first
 //  written on, and on a wider page it keeps those lines, as a letter on
@@ -103,7 +103,7 @@ data class Kept(
     companion object {
         const val VERSION = 1
 
-        // encodeDefaults writes `v` although it has its usual value; explicitNulls = false leaves out a colour that is not there.
+        // encodeDefaults writes `v` although it has its usual value; explicitNulls = false leaves out a color that is not there.
         private val format = Json {
             ignoreUnknownKeys = true
             encodeDefaults = true

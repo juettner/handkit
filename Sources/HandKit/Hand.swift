@@ -112,7 +112,7 @@ public struct Glyph: Codable, Equatable {
     }
 
     /// The same as a number, 0xRRGGBB, or nil for ordinary ink: the form a
-    /// colour is kept in when a written line is saved (see Kept.swift).
+    /// color is kept in when a written line is saved (see Kept.swift).
     public func hex(of stroke: Int) -> Int? {
         guard let colors, colors.indices.contains(stroke), colors[stroke] >= 0 else { return nil }
         return colors[stroke]

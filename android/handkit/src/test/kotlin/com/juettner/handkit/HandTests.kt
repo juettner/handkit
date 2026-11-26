@@ -362,10 +362,10 @@ class HandTests {
 
     // MARK: a line that is kept (Kept.kt)
 
-    /** A line with something of everything in it: two rows, a crossing-out, a colour, a bold line and a signature. */
+    /** A line with something of everything in it: two rows, a crossing-out, a color, a bold line and a signature. */
     private fun everything(lettersPerSecond: Double = 15.0): Written {
-        val coloured = Glyph(strokes = listOf(listOf(0.0, -1.0, 0.5, 0.0), listOf(0.2, -1.4, 0.2, -1.4)), advance = 0.5, colors = listOf(-1, 0xC8322B), widths = listOf(1.0, 1.8))
-        val hand = Hand(mapOf("h" to listOf(stroke()), "i" to listOf(coloured), "t" to listOf(stroke(0.7))))
+        val colored = Glyph(strokes = listOf(listOf(0.0, -1.0, 0.5, 0.0), listOf(0.2, -1.4, 0.2, -1.4)), advance = 0.5, colors = listOf(-1, 0xC8322B), widths = listOf(1.0, 1.8))
+        val hand = Hand(mapOf("h" to listOf(stroke()), "i" to listOf(colored), "t" to listOf(stroke(0.7))))
         val signature = Glyph(strokes = listOf(listOf(0.0, 0.0, 2.0, -1.0, 4.0, 0.0)), advance = 4.0)
         return written("hi ~~hit~~ hi\ntit", hand, width = 60.0, lettersPerSecond = lettersPerSecond, signatures = listOf(signature))
     }
@@ -405,7 +405,7 @@ class HandTests {
         val json = kept.json()
         assertEquals(kept, Kept.from(json))
         assertTrue(json.contains("\"v\":1"))
-        // The colour of the one coloured stroke is there; ordinary ink has no "c" at all, and nothing is written as null.
+        // The color of the one colored stroke is there; ordinary ink has no "c" at all, and nothing is written as null.
         assertTrue(json.contains("\"c\":${0xC8322B}"))
         assertFalse(json.contains("null"))
         assertTrue(kept.marks.any { it.c == 0xC8322B })

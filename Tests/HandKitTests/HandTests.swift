@@ -288,10 +288,10 @@ final class HandTests: XCTestCase {
 
     // MARK: - A line that is kept (Kept.swift)
 
-    /// A line with something of everything in it: two rows, a crossing-out, a colour, a bold line and a signature.
+    /// A line with something of everything in it: two rows, a crossing-out, a color, a bold line and a signature.
     private func everything(lettersPerSecond: Double = 15) -> Written {
-        let coloured = Glyph(strokes: [[0, -1, 0.5, 0], [0.2, -1.4, 0.2, -1.4]], advance: 0.5, colors: [-1, 0xC8322B], widths: [1, 1.8])
-        let hand = Hand(glyphs: ["h": [stroke()], "i": [coloured], "t": [stroke(0.7)]])
+        let colored = Glyph(strokes: [[0, -1, 0.5, 0], [0.2, -1.4, 0.2, -1.4]], advance: 0.5, colors: [-1, 0xC8322B], widths: [1, 1.8])
+        let hand = Hand(glyphs: ["h": [stroke()], "i": [colored], "t": [stroke(0.7)]])
         let signature = Glyph(strokes: [[0, 0, 2, -1, 4, 0]], advance: 4)
         return Written("hi ~~hit~~ hi\ntit", hand: hand, xHeight: 10, width: 60, lettersPerSecond: lettersPerSecond, playful: false, signatures: [signature])
     }
@@ -331,7 +331,7 @@ final class HandTests: XCTestCase {
         XCTAssertEqual(Kept(data: data), kept)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("\"v\":1"))
-        // The colour of the one coloured stroke is there; ordinary ink has no "c" at all, and nothing is written as null.
+        // The color of the one colored stroke is there; ordinary ink has no "c" at all, and nothing is written as null.
         XCTAssertTrue(json.contains("\"c\":\(0xC8322B)"))
         XCTAssertFalse(json.contains("null"))
         XCTAssertTrue(kept.marks.contains { $0.c == nil })

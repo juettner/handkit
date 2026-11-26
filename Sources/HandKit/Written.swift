@@ -121,7 +121,7 @@ struct Laid {
     let beats: Double
     let ink: Double
     let width: CGFloat
-    /// The colour the stroke was drawn in as 0xRRGGBB, or nil for ordinary ink.
+    /// The color the stroke was drawn in as 0xRRGGBB, or nil for ordinary ink.
     let hex: Int?
 }
 
