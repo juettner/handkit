@@ -47,19 +47,22 @@ struct DemoView: View {
 
     /// Pictures kept in the hand beside the letters, in the order the drawing
     /// page lists them. P.S. shows the first two as its envelopes, "drawer"
-    /// and "map" pinned at the left of its reader's row of envelopes, and
-    /// the last three in the strip at the top of its reader's page.
-    static let pictures = ["envelope-sealed", "envelope-open", "drawer", "map", "doodle", "status-signal", "status-wifi", "status-battery"]
+    /// and "map" pinned at the left of its reader's row of envelopes,
+    /// "flashlight" in the middle of the dark page of a note read under the
+    /// covers, and the last three in the strip at the top of its reader's page.
+    static let pictures = ["envelope-sealed", "envelope-open", "drawer", "map", "flashlight", "doodle", "status-signal", "status-wifi", "status-battery"]
     /// What the drawing page calls the ones whose names would read oddly.
     static let labels = ["status-signal": "signal", "status-wifi": "wifi", "status-battery": "battery"]
     /// The pictures P.S. only ever shows small, at these sizes in points, so
     /// the drawing page gives each a box of that shape to fill and shows what
     /// is kept at its real size: the drawer and the map in its reader's row of
-    /// envelopes (Pinned.swift there), and the three in the strip at the top
-    /// of its reader's page (HandStatusBar.swift).
+    /// envelopes (Pinned.swift there), the flashlight on a dark page
+    /// (Reveals.swift), and the three in the strip at the top of its reader's
+    /// page (HandStatusBar.swift).
     static let sizes = [
         "drawer": CGSize(width: 44, height: 44),
         "map": CGSize(width: 44, height: 44),
+        "flashlight": CGSize(width: 40, height: 40),
         "status-signal": CGSize(width: 18, height: 12),
         "status-wifi": CGSize(width: 17, height: 12),
         "status-battery": CGSize(width: 27, height: 13),
@@ -69,6 +72,7 @@ struct DemoView: View {
     static let hints = [
         "drawer": "The drawer: where the envelopes that cannot be opened yet are kept. P.S. pins it at the lower left of the reader's row of envelopes, with \"drawer\" written under it. Only the first one you keep is used.",
         "map": "The map: everywhere a note has found the reader. P.S. pins it beside the drawer, with \"map\" written under it. Only the first one you keep is used.",
+        "flashlight": "The flashlight: P.S. shows it in the middle of the dark page of a note read under the covers, until the reader taps to turn on the light. Draw it in plain ink: the page is dark, so P.S. shows it in a pale ink. Only the first one you keep is used.",
     ]
 
     /// The signatures, kept in the hand as a drawing named "signature", so
