@@ -62,7 +62,7 @@ struct DemoView: View {
     static let sizes = [
         "drawer": CGSize(width: 44, height: 44),
         "map": CGSize(width: 44, height: 44),
-        "flashlight": CGSize(width: 40, height: 40),
+        "flashlight": CGSize(width: 44, height: 44),
         "status-signal": CGSize(width: 18, height: 12),
         "status-wifi": CGSize(width: 17, height: 12),
         "status-battery": CGSize(width: 27, height: 13),
@@ -72,7 +72,7 @@ struct DemoView: View {
     static let hints = [
         "drawer": "The drawer: where the envelopes that cannot be opened yet are kept. P.S. pins it at the lower left of the reader's row of envelopes, with \"drawer\" written under it. Only the first one you keep is used.",
         "map": "The map: everywhere a note has found the reader. P.S. pins it beside the drawer, with \"map\" written under it. Only the first one you keep is used.",
-        "flashlight": "The flashlight: P.S. shows it in the middle of the dark page of a note read under the covers, until the reader taps to turn on the light. Draw it in plain ink: the page is dark, so P.S. shows it in a pale ink. Only the first one you keep is used.",
+        "flashlight": "The flashlight: for a note read under the covers, the reader's whole screen is black with only this in the middle of it, until they tap to turn on the light. Draw it in plain ink: the page is dark, so P.S. shows it in a pale ink. Only the first one you keep is used.",
     ]
 
     /// The signatures, kept in the hand as a drawing named "signature", so
