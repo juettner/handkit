@@ -82,8 +82,9 @@ forward; 0.15 is a hurry), `dryTime` (how long the ink stays wet and dark
 behind the nib), `mirrored` (written backwards, for a mirror), `weather`
 (`.rain` lets the ink run a little down the page, `.sun` dries it pale),
 `words` (holds the pen: it writes only that many words and waits for the
-number to go up, so an app can release a word for each step taken) and
-`onDone`.
+number to go up, so an app can release a word for each step taken),
+`onWord` (called as the pen starts each word, so an app can keep time with
+it) and `onDone`.
 
 **Crossing out.** Put two tildes on each side of a word, as in
 `"you looked ~~nice~~ incredible"`, and the pen writes it, stops for a
@@ -196,7 +197,7 @@ Android 9+. One dependency, Kotlin's own JSON library.
 | --- | --- |
 | `Hand`, `Glyph` | `Hand.kt`: the same two shapes, reading and writing the same JSON |
 | `Written`, `Pen` | `Written.kt`: the same arithmetic, the same numbers |
-| `Handwriting` | `Handwriting.kt`: `Handwriting(text = "...", hand = hand)`, with the same `mirrored`, `weather` and `words` as the Swift one |
+| `Handwriting` | `Handwriting.kt`: `Handwriting(text = "...", hand = hand)`, with the same `mirrored`, `weather`, `words` and `onWord` as the Swift one |
 | `GlyphView`, `Sketch` | `GlyphView.kt` |
 | `HandStore` | `HandStore.kt`: reads `hand.json` from the app's `assets` |
 | `SignaturePad` | `SignaturePad.kt` |

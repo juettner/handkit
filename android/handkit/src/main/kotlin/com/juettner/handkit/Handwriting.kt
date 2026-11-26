@@ -135,6 +135,7 @@ import kotlin.math.pow
  * @param words how many words the pen may write so far, or null for a pen that is not held.
  * @param tappable whether a tap finishes the line. Off where the tap belongs to something else (a label on a card).
  * @param followsTextSize whether the writing grows with the text size chosen in the phone's settings, as type does.
+ * @param onWord called as the pen starts each word (the moment of the tick). Not called for a line that is simply there.
  * @param onDone called once the whole line is on the page (written or tapped through).
  */
 @Composable
@@ -157,6 +158,7 @@ fun Handwriting(
     words: Int? = null,
     tappable: Boolean = true,
     followsTextSize: Boolean = true,
+    onWord: (() -> Unit)? = null,
     onDone: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
@@ -178,6 +180,7 @@ fun Handwriting(
     var elapsed by remember(text) { mutableDoubleStateOf(0.0) }
     // The newest `onDone`, without restarting the clock when the caller hands over a new function object.
     val done by rememberUpdatedState(onDone)
+    val word by rememberUpdatedState(onWord)
     // The newest count of words a held pen is allowed, read by the clock on every frame.
     val allowed by rememberUpdatedState(words)
 
@@ -210,6 +213,7 @@ fun Handwriting(
                 // A word has started if the pen is allowed it and the clock has reached it.
                 while (ticked < plan.wordStarts.size && ticked < may && time >= plan.wordStarts[ticked]) {
                     if (haptics) Haptic.tick(view)
+                    word?.invoke()
                     ticked += 1
                 }
                 if (!told && time >= plan.duration) {
@@ -231,6 +235,7 @@ fun Handwriting(
             elapsed = now
             while (nextWord < plan.wordStarts.size && plan.wordStarts[nextWord] <= now) {
                 if (haptics) Haptic.tick(view)
+                word?.invoke()
                 nextWord += 1
             }
             if (!told && now >= plan.duration) {
