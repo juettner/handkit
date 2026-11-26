@@ -13,7 +13,7 @@
 //  It is behind "developer tools" because it needs two things most people
 //  will never have: the address of such a server, and its publishing key.
 //
-//    HandPublisher     where the address and the key live, and the one request.
+//    HandPublisher   where the address and the key live, and the one request.
 //    PublishPart   the part of the Keep page that asks for them.
 //
 //  The key is a secret, so it goes in the Keychain (the phone's own safe for
@@ -39,8 +39,8 @@ enum PublishOutcome: Equatable {
         switch self {
         case .done(let drawings, let isNew):
             return isNew
-                ? "PublishOutcome: \(drawings) drawings. New notes are written in this hand."
-                : "PublishOutcome again: this hand had been published before, and is the current one once more."
+                ? "Published: \(drawings) drawings. New notes are written in this hand."
+                : "Published again: this hand had been published before, and is the current one once more."
         case .failed(let why):
             return why
         }
@@ -186,8 +186,8 @@ struct PublishPart: View {
         guard !publishedMark.isEmpty else { return "This hand has not been published from this device." }
         let when = Date(timeIntervalSince1970: publishedAt).formatted(date: .abbreviated, time: .shortened)
         return publishedMark == HandPublisher.mark(of: hands.hand)
-            ? "PublishOutcome \(when). Nothing has changed since."
-            : "PublishOutcome \(when). You have drawn since: what is published is the hand as it was then."
+            ? "Published \(when). Nothing has changed since."
+            : "Published \(when). You have drawn since: what is published is the hand as it was then."
     }
 
     var body: some View {
