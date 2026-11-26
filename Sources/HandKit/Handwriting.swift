@@ -42,6 +42,11 @@
 //               counts something (steps, say) and passes the count. While
 //               the pen is held a tap does not finish the line.
 //
+//  And it can say what it is doing: `onWord` is called as the pen starts
+//  each word (the moment of the tick in the hand), and `onDone` when the
+//  line is on the page. An app can keep time with the pen that way: dim a
+//  light for a moment on every word, say.
+//
 //  It can also sign. Give it `signatures` (drawings made on SignaturePad) and
 //  the pen puts one under the writing when the words are done. With an empty
 //  text and an empty hand it writes the signature alone, which is how an app
@@ -146,6 +151,8 @@ public struct Handwriting: View {
     var weather: Weathering = .dry
     /// How many words the pen may write so far, or nil for a pen that is not held.
     var words: Int? = nil
+    /// Called as the pen starts each word. Not called for a line that is simply there.
+    var onWord: (() -> Void)? = nil
     /// Called once the whole line is on the page (written or tapped through).
     var onDone: (() -> Void)? = nil
 
@@ -176,6 +183,7 @@ public struct Handwriting: View {
         mirrored: Bool = false,
         weather: Weathering = .dry,
         words: Int? = nil,
+        onWord: (() -> Void)? = nil,
         onDone: (() -> Void)? = nil
     ) {
         self.text = text
@@ -193,6 +201,7 @@ public struct Handwriting: View {
         self.mirrored = mirrored
         self.weather = weather
         self.words = words
+        self.onWord = onWord
         self.onDone = onDone
     }
 
@@ -332,6 +341,7 @@ public struct Handwriting: View {
             if Task.isCancelled { return }
             if skipped { break }
             if haptics { Haptic.tick() }
+            onWord?()
         }
         if !skipped { await sleep(until: plan.duration) }
         if Task.isCancelled { return }
@@ -355,6 +365,7 @@ public struct Handwriting: View {
             // A word has started if the pen is allowed it and the clock has reached it.
             while ticked < plan.wordStarts.count, ticked < hold.allowed, hold.time >= plan.wordStarts[ticked] {
                 if haptics { Haptic.tick() }
+                onWord?()
                 ticked += 1
             }
             if !done, hold.time >= plan.duration {
