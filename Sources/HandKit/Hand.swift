@@ -108,8 +108,14 @@ public struct Glyph: Codable, Equatable {
 
     /// The colour a stroke was drawn in, or nil for ordinary ink.
     public func color(of stroke: Int) -> Color? {
+        hex(of: stroke).map { Color(hex: UInt32($0)) }
+    }
+
+    /// The same as a number, 0xRRGGBB, or nil for ordinary ink: the form a
+    /// colour is kept in when a written line is saved (see Kept.swift).
+    public func hex(of stroke: Int) -> Int? {
         guard let colors, colors.indices.contains(stroke), colors[stroke] >= 0 else { return nil }
-        return Color(hex: UInt32(colors[stroke]))
+        return colors[stroke]
     }
 
     /// How thick a stroke is, as a multiple of the pen's usual line. 1 unless

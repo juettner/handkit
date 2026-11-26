@@ -30,6 +30,11 @@
 //  The same line is always written the same way (a seeded generator keyed on
 //  the text), so nothing shimmers when the page redraws.
 //
+//  A line that has been written can be kept, stroke for stroke, and shown
+//  again later without the hand it was written in: see Kept.kt. That is why
+//  the strokes are held as they were laid down (`Laid`, in beats) as well as
+//  ready to draw (`Mark`, in seconds).
+//
 //  THIS FILE AND Written.swift MUST AGREE, number for number and in the
 //  order the random numbers are asked for. The generator is the same on both
 //  sides, so as long as they agree, a note is written with the same drawings
@@ -118,6 +123,28 @@ data class Mark(
 data class Extent(val width: Double, val height: Double)
 
 /**
+ * A line as the pen laid it down, before its clock is turned into seconds:
+ * the strokes on the page, the beat each starts on, and how many letters the
+ * whole of it counts as. `Written` is made from one of these, and so is a
+ * line that is kept (Kept.kt).
+ */
+class Laid(
+    val strokes: List<Stroke>,
+    /** The beat each word starts on. */
+    val starts: List<Double>,
+    /** How long the whole line takes, in beats. */
+    val beats: Double,
+    /** How many letters it counts as. With a speed in letters per second, that turns beats into seconds. */
+    val letters: Int,
+    val size: Extent,
+    /** The x-height the strokes were placed at. */
+    val xHeight: Double,
+) {
+    /** One stroke: its points on the page, the beat it starts on and how many it takes. */
+    class Stroke(val points: List<Point>, val start: Double, val beats: Double, val ink: Double, val width: Double, val color: Int?)
+}
+
+/**
  * A whole line, worked out for one page width.
  *
  * `playful` allows the rare drawings and the scribbles; without it the line
@@ -136,24 +163,46 @@ data class Extent(val width: Double, val height: Double)
  * what is left afterwards is four read-only results. The sizes are in
  * whatever unit `xHeight` and `pageWidth` are given in (the view gives pixels).
  */
-class Written(
-    text: String,
-    hand: Hand,
-    xHeight: Double,
-    pageWidth: Double,
-    lettersPerSecond: Double,
-    playful: Boolean = true,
-    seed: Int = 0,
-    looseness: Double = 1.0,
-    slant: Double = 0.0,
-    signatures: List<Glyph> = emptyList(),
-) {
+class Written private constructor(private val laid: Laid, lettersPerSecond: Double) {
+    constructor(
+        text: String,
+        hand: Hand,
+        xHeight: Double,
+        pageWidth: Double,
+        lettersPerSecond: Double,
+        playful: Boolean = true,
+        seed: Int = 0,
+        looseness: Double = 1.0,
+        slant: Double = 0.0,
+        signatures: List<Glyph> = emptyList(),
+    ) : this(lay(text, hand, xHeight, pageWidth, playful, seed, looseness, slant, signatures), lettersPerSecond)
+
+    /**
+     * A line that was kept (see Kept.kt), ready to draw again at this size
+     * and speed. No hand is asked for: the strokes are all there is.
+     */
+    constructor(kept: Kept, xHeight: Double, lettersPerSecond: Double) : this(kept.laid(xHeight), lettersPerSecond)
+
     val marks: List<Mark>
-    val size: Extent
+    val size: Extent = laid.size
     /** When the last stroke ends. */
     val duration: Double
     /** When each word starts, for the haptic ticks. */
     val wordStarts: List<Double>
+
+    init {
+        // Scale the beats so the line takes as long as that many letters should.
+        val seconds = if (laid.beats > 0 && lettersPerSecond > 0) max(0.4, laid.letters / lettersPerSecond) / laid.beats else 0.0
+        marks = laid.strokes.map { Mark(it.points, it.start * seconds, it.beats * seconds, it.ink, it.width, it.color) }
+        wordStarts = laid.starts.map { it * seconds }
+        duration = laid.beats * seconds
+    }
+
+    /**
+     * The line as it was written, to be kept: every stroke, where it went
+     * and when, and nothing about the page but that. See Kept.kt.
+     */
+    fun kept(): Kept = Kept.of(laid)
 
     /**
      * The moment up to which the pen may write when it is allowed `count`
@@ -163,229 +212,236 @@ class Written(
     fun momentAfterWords(count: Int): Double =
         if (count < wordStarts.size) wordStarts[max(0, count)] else Double.POSITIVE_INFINITY
 
-    /** A stroke before the beats are turned into seconds. */
-    private class Pending(val points: List<Point>, val start: Double, val beats: Double, val ink: Double, val width: Double, val color: Int?)
-
     /** Where the ink of crossed-out words runs on one row. */
     private class Run(val from: Double, var to: Double, val baseline: Double)
-
-    init {
-        val random = Seeded(if (seed == 0) text else "$text#$seed")
-        val cut = wordsOf(text)
-        val words = cut.words.toMutableList()
-        val breaks = cut.breaks
-        // Now and then a scribble follows the line, written as one more word.
-        val scribbles = random.unit() < Pen.scribbleChance
-        if (playful && scribbles && words.isNotEmpty() && !hand.glyphs[Hand.scribble].isNullOrEmpty()) {
-            words.add(Hand.scribble)
-        }
-
-        var x = 0.0
-        var baseline = Pen.ascent * xHeight
-        var widest = 0.0
-        // The clock runs in arbitrary beats first and is scaled to seconds at the end.
-        var clock = 0.0
-        var letterCount = 0
-        var previous: String? = null
-        // True when the text had a line break before the word about to be placed.
-        var broken = false
-        val pending = ArrayList<Pending>()
-        val starts = ArrayList<Double>()
-        // The words crossed out and not yet struck through: where their ink runs, row by row.
-        val toStrike = ArrayList<Run>()
-
-        // Draws the line through the words waiting in `toStrike`: one stroke
-        // for each row they are on, a little unsteady, as a quick line is.
-        // (A function inside a function; it can read and change the variables above.)
-        fun strikeThrough() {
-            for ((row, run) in toStrike.withIndex()) {
-                // The second thought: the pen stops before it goes back.
-                clock += if (row == 0) 3.0 else 0.6
-                val from = run.from - 0.12 * xHeight
-                val to = run.to + 0.12 * xHeight
-                val length = (to - from) / xHeight
-                val height = run.baseline - (Pen.strikeHeight + random.between(-0.06, 0.06)) * xHeight
-                // It climbs or falls a little from one end to the other.
-                val rise = random.between(-0.09, 0.09) * xHeight
-                val steps = max(2, (length / 0.7).toInt())
-                val points = ArrayList<Point>()
-                for (step in 0..steps) {
-                    val along = step.toDouble() / steps.toDouble()
-                    val wobble = random.between(-0.035, 0.035) * xHeight
-                    points.add(Point(from + (to - from) * along, height + rise * (along - 0.5) + wobble))
-                }
-                // One quick stroke: faster than a letter of the same length.
-                val beats = 0.25 + 0.3 * max(0.0, length).pow(0.75)
-                pending.add(Pending(points, clock, beats, 0.95, Pen.nib * xHeight, null))
-                clock += beats
-            }
-            toStrike.clear()
-        }
-
-        for ((number, word) in words.withIndex()) {
-            // Pick the drawings first, so the word's width is known before it is placed.
-            // A character that was never drawn is left out; the rest of the word is still written.
-            val pieces = hand.piecesOf(word, skippingUnknown = true) ?: emptyList()
-            // Remembered until a word is really placed, in case this one turns out to be empty.
-            if (number in breaks) broken = true
-            if (pieces.isEmpty()) continue
-            val crossedOut = number in cut.struck
-            // The words before this one were crossed out and this one is not: strike them now, before going on.
-            if (!crossedOut && toStrike.isNotEmpty()) strikeThrough()
-            var rareUsed = false
-            val letters: List<Glyph> = pieces.map { piece ->
-                // Both numbers are always drawn, so one letter's luck never shifts the next one's.
-                val roll = random.unit()
-                val pick = random.unit()
-                val usual = piece.drawings.filter { it.frequency == Glyph.Frequency.USUAL }
-                val occasional = piece.drawings.filter { it.frequency == Glyph.Frequency.OCCASIONAL }
-                val rare = piece.drawings.filter { it.frequency == Glyph.Frequency.RARE }
-                // A letter with no usual drawing is written with the next most common kind it has.
-                var pool = if (usual.isNotEmpty()) usual else if (occasional.isNotEmpty()) occasional else rare
-                if (playful && usual.isNotEmpty()) {
-                    // One roll decides: the lowest numbers are the rare drawing, the next band the occasional one.
-                    if (rare.isNotEmpty() && !rareUsed && roll < Pen.rareChance) {
-                        pool = rare
-                        rareUsed = true
-                    } else if (occasional.isNotEmpty() && roll < Pen.rareChance + Pen.occasionalChance) {
-                        pool = occasional
-                    }
-                }
-                pool[(pick * pool.size).toInt() % pool.size]
-            }
-            val wordWidth = letters.sumOf { it.advance * xHeight } + max(0, letters.size - 1) * Pen.letterGap * xHeight
-
-            if (x > 0) {
-                x += Pen.wordGap * xHeight
-                if (broken || x + wordWidth > pageWidth) {
-                    x = 0.0
-                    baseline += Pen.lineHeight * xHeight
-                }
-            }
-
-            broken = false
-
-            // The breath before a word, and the rest after punctuation.
-            if (previous != null) {
-                clock += 1.6
-                if (previous in ",;:") clock += 3.0
-                if (previous in ".?!") clock += 6.0
-            }
-            starts.add(clock)
-            // A whole word leans a little faint or heavy.
-            val lean = random.between(-0.1, 0.02)
-
-            for ((index, glyph) in letters.withIndex()) {
-                val advance = glyph.advance * xHeight
-                // A word longer than the page breaks where it must.
-                if (x > 0 && x + advance > pageWidth) {
-                    x = 0.0
-                    baseline += Pen.lineHeight * xHeight
-                }
-                if (index > 0) clock += 0.45
-
-                // No hand puts a letter down the same way twice.
-                val lift = random.between(-0.05, 0.05) * looseness * xHeight
-                val scale = 1 + random.between(-0.04, 0.04) * looseness
-                val tilt = random.between(-0.035, 0.035) * looseness
-                val ink = min(1.0, max(0.72, 0.93 + lean + random.between(-0.07, 0.07)))
-                val nib = Pen.nib * xHeight * random.between(0.92, 1.08)
-                val originX = x
-                val originY = baseline + lift
-                val pivotX = glyph.advance / 2
-                val pivotY = -0.5
-
-                for ((strokeIndex, stroke) in glyph.points.withIndex()) {
-                    if (stroke.isEmpty()) continue
-                    if (strokeIndex > 0) clock += 0.3
-                    val length = lengthOf(stroke)
-                    // Long strokes are made faster than short ones, as a hand does.
-                    val beats = 0.25 + 0.5 * length.pow(0.75)
-                    val placed = stroke.map { point ->
-                        val dx = (point.x - pivotX) * scale
-                        val dy = (point.y - pivotY) * scale
-                        val ry = dx * sin(tilt) + dy * cos(tilt) + pivotY
-                        // The slant: the higher above the baseline (y is negative there), the further forward.
-                        val rx = dx * cos(tilt) - dy * sin(tilt) + pivotX - ry * slant
-                        Point(originX + rx * xHeight, originY + ry * xHeight)
-                    }
-                    pending.add(Pending(placed, clock, beats, ink, nib * glyph.widthOf(strokeIndex), glyph.colorOf(strokeIndex)))
-                    clock += beats
-                }
-
-                if (crossedOut) {
-                    // The line will run through every letter of the word, and on through the next word if that is on the same row.
-                    val last = toStrike.lastOrNull()
-                    if (last != null && last.baseline == baseline) {
-                        last.to = x + advance
-                    } else {
-                        toStrike.add(Run(x, x + advance, baseline))
-                    }
-                }
-                x += advance
-                widest = max(widest, x)
-                if (index < letters.size - 1) x += Pen.letterGap * xHeight
-                // Joined letters count as the letters they stand for, so they are not rushed.
-                letterCount += pieces[index].count
-            }
-            previous = word.characters().lastOrNull()
-        }
-        // The text ended on a crossed-out word.
-        if (toStrike.isNotEmpty()) strikeThrough()
-
-        // The signature, under everything. Its random number is asked for last,
-        // so having one never changes how the letters above it come out.
-        var signedTo: Double? = null
-        val signable = signatures.filter { glyph -> glyph.points.any { it.isNotEmpty() } }
-        if (signable.isNotEmpty()) {
-            val glyph = signable[(random.unit() * signable.size).toInt() % signable.size]
-            val every = glyph.points.flatten()
-            val left = every.minOf { it.x }
-            val right = every.maxOf { it.x }
-            val top = every.minOf { it.y }
-            val bottom = every.maxOf { it.y }
-            // Drawn at the size it was signed, against the letters; smaller only if the page is too narrow for it.
-            val natural = max(right - left, 0.01) * xHeight
-            val unit = xHeight * min(1.0, pageWidth / natural)
-            val nib = Pen.nib * unit
-            // The room left round the ink is for the boldest line in it.
-            val edge = nib * glyph.thickest
-            val written = pending.isNotEmpty()
-            val above = if (written) baseline + (Pen.descent + Pen.signatureGap) * xHeight else edge
-            // `top` is how far the ink reaches above its own baseline (a negative number).
-            val base = above - top * unit
-
-            if (written) clock += 6.0
-            starts.add(clock)
-            val began = clock
-            for ((strokeIndex, stroke) in glyph.points.withIndex()) {
-                if (stroke.isEmpty()) continue
-                if (strokeIndex > 0) clock += 0.3 * Pen.signatureCare
-                val length = lengthOf(stroke)
-                val beats = (0.25 + 0.5 * length.pow(0.75)) * Pen.signatureCare
-                val placed = stroke.map { Point((it.x - left) * unit, base + it.y * unit) }
-                pending.add(Pending(placed, clock, beats, 0.95, nib * glyph.widthOf(strokeIndex), glyph.colorOf(strokeIndex)))
-                clock += beats
-            }
-            // A letter takes about two beats, pauses included. Counting the
-            // signature as that many letters keeps the writing above it at its usual pace.
-            letterCount += max(4, Math.round((clock - began) / 2).toInt())
-            widest = max(widest, (right - left) * unit)
-            signedTo = base + bottom * unit + edge
-        }
-
-        // Scale the beats so the line takes as long as that many letters should.
-        val seconds = if (clock > 0 && lettersPerSecond > 0) max(0.4, letterCount / lettersPerSecond) / clock else 0.0
-        marks = pending.map { Mark(it.points, it.start * seconds, it.beats * seconds, it.ink, it.width, it.color) }
-        wordStarts = starts.map { it * seconds }
-        duration = clock * seconds
-        size = Extent(widest, signedTo ?: (baseline + Pen.descent * xHeight))
-    }
 
     /** The words of a text, the numbers of the ones crossed out, and the numbers of the ones that follow a line break. */
     data class Cut(val words: List<String>, val struck: Set<Int>, val breaks: Set<Int>)
 
     companion object {
+        /**
+         * Works a text out into strokes: which drawing of each letter, where
+         * each goes on a page of this width, and the beat each starts on.
+         * Everything the pen decides is decided here.
+         */
+        internal fun lay(
+            text: String,
+            hand: Hand,
+            xHeight: Double,
+            pageWidth: Double,
+            playful: Boolean,
+            seed: Int,
+            looseness: Double,
+            slant: Double,
+            signatures: List<Glyph>,
+        ): Laid {
+            val random = Seeded(if (seed == 0) text else "$text#$seed")
+            val cut = wordsOf(text)
+            val words = cut.words.toMutableList()
+            val breaks = cut.breaks
+            // Now and then a scribble follows the line, written as one more word.
+            val scribbles = random.unit() < Pen.scribbleChance
+            if (playful && scribbles && words.isNotEmpty() && !hand.glyphs[Hand.scribble].isNullOrEmpty()) {
+                words.add(Hand.scribble)
+            }
+
+            var x = 0.0
+            var baseline = Pen.ascent * xHeight
+            var widest = 0.0
+            // The clock runs in arbitrary beats first and is scaled to seconds at the end.
+            var clock = 0.0
+            var letterCount = 0
+            var previous: String? = null
+            // True when the text had a line break before the word about to be placed.
+            var broken = false
+            val pending = ArrayList<Laid.Stroke>()
+            val starts = ArrayList<Double>()
+            // The words crossed out and not yet struck through: where their ink runs, row by row.
+            val toStrike = ArrayList<Run>()
+
+            // Draws the line through the words waiting in `toStrike`: one stroke
+            // for each row they are on, a little unsteady, as a quick line is.
+            // (A function inside a function; it can read and change the variables above.)
+            fun strikeThrough() {
+                for ((row, run) in toStrike.withIndex()) {
+                    // The second thought: the pen stops before it goes back.
+                    clock += if (row == 0) 3.0 else 0.6
+                    val from = run.from - 0.12 * xHeight
+                    val to = run.to + 0.12 * xHeight
+                    val length = (to - from) / xHeight
+                    val height = run.baseline - (Pen.strikeHeight + random.between(-0.06, 0.06)) * xHeight
+                    // It climbs or falls a little from one end to the other.
+                    val rise = random.between(-0.09, 0.09) * xHeight
+                    val steps = max(2, (length / 0.7).toInt())
+                    val points = ArrayList<Point>()
+                    for (step in 0..steps) {
+                        val along = step.toDouble() / steps.toDouble()
+                        val wobble = random.between(-0.035, 0.035) * xHeight
+                        points.add(Point(from + (to - from) * along, height + rise * (along - 0.5) + wobble))
+                    }
+                    // One quick stroke: faster than a letter of the same length.
+                    val beats = 0.25 + 0.3 * max(0.0, length).pow(0.75)
+                    pending.add(Laid.Stroke(points, clock, beats, 0.95, Pen.nib * xHeight, null))
+                    clock += beats
+                }
+                toStrike.clear()
+            }
+
+            for ((number, word) in words.withIndex()) {
+                // Pick the drawings first, so the word's width is known before it is placed.
+                // A character that was never drawn is left out; the rest of the word is still written.
+                val pieces = hand.piecesOf(word, skippingUnknown = true) ?: emptyList()
+                // Remembered until a word is really placed, in case this one turns out to be empty.
+                if (number in breaks) broken = true
+                if (pieces.isEmpty()) continue
+                val crossedOut = number in cut.struck
+                // The words before this one were crossed out and this one is not: strike them now, before going on.
+                if (!crossedOut && toStrike.isNotEmpty()) strikeThrough()
+                var rareUsed = false
+                val letters: List<Glyph> = pieces.map { piece ->
+                    // Both numbers are always drawn, so one letter's luck never shifts the next one's.
+                    val roll = random.unit()
+                    val pick = random.unit()
+                    val usual = piece.drawings.filter { it.frequency == Glyph.Frequency.USUAL }
+                    val occasional = piece.drawings.filter { it.frequency == Glyph.Frequency.OCCASIONAL }
+                    val rare = piece.drawings.filter { it.frequency == Glyph.Frequency.RARE }
+                    // A letter with no usual drawing is written with the next most common kind it has.
+                    var pool = if (usual.isNotEmpty()) usual else if (occasional.isNotEmpty()) occasional else rare
+                    if (playful && usual.isNotEmpty()) {
+                        // One roll decides: the lowest numbers are the rare drawing, the next band the occasional one.
+                        if (rare.isNotEmpty() && !rareUsed && roll < Pen.rareChance) {
+                            pool = rare
+                            rareUsed = true
+                        } else if (occasional.isNotEmpty() && roll < Pen.rareChance + Pen.occasionalChance) {
+                            pool = occasional
+                        }
+                    }
+                    pool[(pick * pool.size).toInt() % pool.size]
+                }
+                val wordWidth = letters.sumOf { it.advance * xHeight } + max(0, letters.size - 1) * Pen.letterGap * xHeight
+
+                if (x > 0) {
+                    x += Pen.wordGap * xHeight
+                    if (broken || x + wordWidth > pageWidth) {
+                        x = 0.0
+                        baseline += Pen.lineHeight * xHeight
+                    }
+                }
+
+                broken = false
+
+                // The breath before a word, and the rest after punctuation.
+                if (previous != null) {
+                    clock += 1.6
+                    if (previous in ",;:") clock += 3.0
+                    if (previous in ".?!") clock += 6.0
+                }
+                starts.add(clock)
+                // A whole word leans a little faint or heavy.
+                val lean = random.between(-0.1, 0.02)
+
+                for ((index, glyph) in letters.withIndex()) {
+                    val advance = glyph.advance * xHeight
+                    // A word longer than the page breaks where it must.
+                    if (x > 0 && x + advance > pageWidth) {
+                        x = 0.0
+                        baseline += Pen.lineHeight * xHeight
+                    }
+                    if (index > 0) clock += 0.45
+
+                    // No hand puts a letter down the same way twice.
+                    val lift = random.between(-0.05, 0.05) * looseness * xHeight
+                    val scale = 1 + random.between(-0.04, 0.04) * looseness
+                    val tilt = random.between(-0.035, 0.035) * looseness
+                    val ink = min(1.0, max(0.72, 0.93 + lean + random.between(-0.07, 0.07)))
+                    val nib = Pen.nib * xHeight * random.between(0.92, 1.08)
+                    val originX = x
+                    val originY = baseline + lift
+                    val pivotX = glyph.advance / 2
+                    val pivotY = -0.5
+
+                    for ((strokeIndex, stroke) in glyph.points.withIndex()) {
+                        if (stroke.isEmpty()) continue
+                        if (strokeIndex > 0) clock += 0.3
+                        val length = lengthOf(stroke)
+                        // Long strokes are made faster than short ones, as a hand does.
+                        val beats = 0.25 + 0.5 * length.pow(0.75)
+                        val placed = stroke.map { point ->
+                            val dx = (point.x - pivotX) * scale
+                            val dy = (point.y - pivotY) * scale
+                            val ry = dx * sin(tilt) + dy * cos(tilt) + pivotY
+                            // The slant: the higher above the baseline (y is negative there), the further forward.
+                            val rx = dx * cos(tilt) - dy * sin(tilt) + pivotX - ry * slant
+                            Point(originX + rx * xHeight, originY + ry * xHeight)
+                        }
+                        pending.add(Laid.Stroke(placed, clock, beats, ink, nib * glyph.widthOf(strokeIndex), glyph.colorOf(strokeIndex)))
+                        clock += beats
+                    }
+
+                    if (crossedOut) {
+                        // The line will run through every letter of the word, and on through the next word if that is on the same row.
+                        val last = toStrike.lastOrNull()
+                        if (last != null && last.baseline == baseline) {
+                            last.to = x + advance
+                        } else {
+                            toStrike.add(Run(x, x + advance, baseline))
+                        }
+                    }
+                    x += advance
+                    widest = max(widest, x)
+                    if (index < letters.size - 1) x += Pen.letterGap * xHeight
+                    // Joined letters count as the letters they stand for, so they are not rushed.
+                    letterCount += pieces[index].count
+                }
+                previous = word.characters().lastOrNull()
+            }
+            // The text ended on a crossed-out word.
+            if (toStrike.isNotEmpty()) strikeThrough()
+
+            // The signature, under everything. Its random number is asked for last,
+            // so having one never changes how the letters above it come out.
+            var signedTo: Double? = null
+            val signable = signatures.filter { glyph -> glyph.points.any { it.isNotEmpty() } }
+            if (signable.isNotEmpty()) {
+                val glyph = signable[(random.unit() * signable.size).toInt() % signable.size]
+                val every = glyph.points.flatten()
+                val left = every.minOf { it.x }
+                val right = every.maxOf { it.x }
+                val top = every.minOf { it.y }
+                val bottom = every.maxOf { it.y }
+                // Drawn at the size it was signed, against the letters; smaller only if the page is too narrow for it.
+                val natural = max(right - left, 0.01) * xHeight
+                val unit = xHeight * min(1.0, pageWidth / natural)
+                val nib = Pen.nib * unit
+                // The room left round the ink is for the boldest line in it.
+                val edge = nib * glyph.thickest
+                val written = pending.isNotEmpty()
+                val above = if (written) baseline + (Pen.descent + Pen.signatureGap) * xHeight else edge
+                // `top` is how far the ink reaches above its own baseline (a negative number).
+                val base = above - top * unit
+
+                if (written) clock += 6.0
+                starts.add(clock)
+                val began = clock
+                for ((strokeIndex, stroke) in glyph.points.withIndex()) {
+                    if (stroke.isEmpty()) continue
+                    if (strokeIndex > 0) clock += 0.3 * Pen.signatureCare
+                    val length = lengthOf(stroke)
+                    val beats = (0.25 + 0.5 * length.pow(0.75)) * Pen.signatureCare
+                    val placed = stroke.map { Point((it.x - left) * unit, base + it.y * unit) }
+                    pending.add(Laid.Stroke(placed, clock, beats, 0.95, nib * glyph.widthOf(strokeIndex), glyph.colorOf(strokeIndex)))
+                    clock += beats
+                }
+                // A letter takes about two beats, pauses included. Counting the
+                // signature as that many letters keeps the writing above it at its usual pace.
+                letterCount += max(4, Math.round((clock - began) / 2).toInt())
+                widest = max(widest, (right - left) * unit)
+                signedTo = base + bottom * unit + edge
+            }
+
+            return Laid(pending, starts, clock, letterCount, Extent(widest, signedTo ?: (baseline + Pen.descent * xHeight)), xHeight)
+        }
+
         /**
          * The text as words: split at any white space, with the crossing-out
          * marks taken out. `struck` holds the numbers of the words that are

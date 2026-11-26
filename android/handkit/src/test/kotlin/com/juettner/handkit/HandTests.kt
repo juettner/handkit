@@ -360,6 +360,125 @@ class HandTests {
         assertEquals(listOf(0.799117642975938, 0.8546757230086068, 0.4025007878226726, 0.1532227461276563), first("café ♡#7"))
     }
 
+    // MARK: a line that is kept (Kept.kt)
+
+    /** A line with something of everything in it: two rows, a crossing-out, a colour, a bold line and a signature. */
+    private fun everything(lettersPerSecond: Double = 15.0): Written {
+        val coloured = Glyph(strokes = listOf(listOf(0.0, -1.0, 0.5, 0.0), listOf(0.2, -1.4, 0.2, -1.4)), advance = 0.5, colors = listOf(-1, 0xC8322B), widths = listOf(1.0, 1.8))
+        val hand = Hand(mapOf("h" to listOf(stroke()), "i" to listOf(coloured), "t" to listOf(stroke(0.7))))
+        val signature = Glyph(strokes = listOf(listOf(0.0, 0.0, 2.0, -1.0, 4.0, 0.0)), advance = 4.0)
+        return written("hi ~~hit~~ hi\ntit", hand, width = 60.0, lettersPerSecond = lettersPerSecond, signatures = listOf(signature))
+    }
+
+    @Test
+    fun aKeptLineIsDrawnAgainStrokeForStroke() {
+        val first = everything()
+        assertTrue(first.marks.size > 10)
+        // Shown again from what was kept: no text, no hand.
+        val again = Written(first.kept(), xHeight = 10.0, lettersPerSecond = 15.0)
+        assertEquals(first.marks.size, again.marks.size)
+        // Kept to a thousandth of an x-height, so at an x-height of 10 nothing has moved by more than a hundredth.
+        for ((a, b) in first.marks.zip(again.marks)) {
+            assertEquals(a.points.size, b.points.size)
+            for ((p, q) in a.points.zip(b.points)) {
+                assertEquals(p.x, q.x, 0.006)
+                assertEquals(p.y, q.y, 0.006)
+            }
+            assertEquals(a.start, b.start, 0.001)
+            assertEquals(a.duration, b.duration, 0.001)
+            assertEquals(a.ink, b.ink, 0.001)
+            assertEquals(a.width, b.width, 0.001)
+            assertEquals(a.color, b.color)
+        }
+        assertEquals(first.size.width, again.size.width, 0.006)
+        assertEquals(first.size.height, again.size.height, 0.006)
+        assertEquals(first.duration, again.duration, 0.001)
+        assertEquals(first.wordStarts.size, again.wordStarts.size)
+        for ((a, b) in first.wordStarts.zip(again.wordStarts)) assertEquals(a, b, 0.001)
+        // And keeping what was shown again changes nothing more: the rounding happens once.
+        assertEquals(first.kept(), again.kept())
+    }
+
+    @Test
+    fun aKeptLineSurvivesBeingSavedAndRead() {
+        val kept = everything().kept()
+        val json = kept.json()
+        assertEquals(kept, Kept.from(json))
+        assertTrue(json.contains("\"v\":1"))
+        // The colour of the one coloured stroke is there; ordinary ink has no "c" at all, and nothing is written as null.
+        assertTrue(json.contains("\"c\":${0xC8322B}"))
+        assertFalse(json.contains("null"))
+        assertTrue(kept.marks.any { it.c == 0xC8322B })
+        assertTrue(kept.marks.any { it.c == null })
+        // Nothing of the words is in it: a kept line is strokes.
+        assertFalse(json.contains("hi"))
+    }
+
+    @Test
+    fun aKeptLineCanBeDrawnAtAnySizeAndAnySpeed() {
+        val first = everything()
+        val kept = first.kept()
+        val larger = Written(kept, xHeight = 20.0, lettersPerSecond = 30.0)
+        assertEquals(first.size.width * 2, larger.size.width, 0.02)
+        assertEquals(first.marks[3].points[0].x * 2, larger.marks[3].points[0].x, 0.02)
+        assertEquals(first.marks[3].width * 2, larger.marks[3].width, 0.002)
+        // Twice the speed: half the time.
+        assertEquals(first.duration / 2, larger.duration, 0.001)
+        // No speed at all: every stroke is simply there, as when a line is not written out.
+        val there = Written(kept, xHeight = 10.0, lettersPerSecond = 0.0)
+        assertEquals(0.0, there.duration, 0.0)
+        assertTrue(there.marks.all { it.start == 0.0 && it.duration == 0.0 })
+        // Kept from a line that was simply there, it can still be written out later: the beats are kept, not the seconds.
+        val fromStill = Written(everything(lettersPerSecond = 0.0).kept(), xHeight = 10.0, lettersPerSecond = 15.0)
+        assertEquals(first.duration, fromStill.duration, 0.001)
+    }
+
+    @Test
+    fun aKeptLineDoesNotReflowAndIsDrawnSmallerOnANarrowerPage() {
+        val kept = everything().kept()
+        val widest = kept.size[0]
+        // A wider page, or no limit: as asked.
+        assertEquals(10.0, kept.fitted(xHeight = 10.0, width = widest * 10 + 200), 0.0)
+        assertEquals(10.0, kept.fitted(xHeight = 10.0, width = Double.MAX_VALUE), 0.0)
+        // Half the room: half the size, and the same rows.
+        val narrow = kept.fitted(xHeight = 10.0, width = widest * 5)
+        assertEquals(5.0, narrow, 0.0001)
+        val smaller = Written(kept, narrow, 0.0)
+        assertEquals(widest * 5, smaller.size.width, 0.0001)
+        assertEquals(everything().marks.size, smaller.marks.size)
+    }
+
+    @Test
+    fun whatIsNotAKeptLineIsNotReadAsOne() {
+        assertNull(Kept.from("not json"))
+        assertNull(Kept.from("{}"))
+        // From a newer version of the pen than this one knows how to draw.
+        assertNull(Kept.from("""{"v":2,"size":[1,1],"beats":1,"letters":1,"words":[0],"marks":[]}"""))
+        assertNull(Kept.from("""{"v":1,"size":[1],"beats":1,"letters":1,"words":[0],"marks":[]}"""))
+    }
+
+    /**
+     * The same few strokes, as an iPhone writes them down. The Swift tests
+     * read this very text and expect these very numbers, so a line kept on
+     * one kind of phone is the same line on the other.
+     */
+    @Test
+    fun aLineKeptOnAnIPhoneIsReadTheSameHere() {
+        val json = """{"beats":12.5,"letters":4,"marks":[{"d":1.1,"i":0.93,"p":[0,1.95,0.4,1.2,0.8,1.95],"s":0,"w":0.13},{"c":13120043,"d":0.25,"i":0.88,"p":[1.4,1.95],"s":6.1,"w":0.14}],"size":[4.2,3.9],"v":1,"words":[0,6.1]}"""
+        val kept = Kept.from(json)!!
+        assertEquals(listOf(4.2, 3.9), kept.size)
+        assertEquals(4, kept.letters)
+        assertEquals(0xC8322B, kept.marks[1].c)
+        assertNull(kept.marks[0].c)
+        val line = Written(kept, xHeight = 10.0, lettersPerSecond = 10.0)
+        // Four letters at ten a second is 0.4 seconds, spread over 12.5 beats.
+        assertEquals(0.4, line.duration, 1e-9)
+        assertEquals(6.1 * 0.4 / 12.5, line.wordStarts[1], 1e-9)
+        assertEquals(listOf(Point(0.0, 19.5), Point(4.0, 12.0), Point(8.0, 19.5)), line.marks[0].points)
+        assertEquals(1.4, line.marks[1].width, 1e-9)
+        assertEquals(42.0, line.size.width, 1e-9)
+    }
+
     /**
      * `Pen`'s numbers are written down twice, once in Written.swift and once
      * in Written.kt. This reads the Swift ones out of their file and holds

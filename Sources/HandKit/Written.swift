@@ -29,6 +29,11 @@
 //  The same line is always written the same way (a seeded generator keyed on
 //  the text), so nothing shimmers when the page redraws.
 //
+//  A line that has been written can be kept, stroke for stroke, and shown
+//  again later without the hand it was written in: see Kept.swift. That is
+//  why the strokes are held here as they were laid down (`Laid`, in beats)
+//  as well as ready to draw (`Mark`, in seconds).
+//
 //  `Pen` holds the numbers. Tools/hand_font.py reads them out of this file
 //  by name, so the font it makes matches the pen: keep each one on a line of
 //  the form `public static let name: CGFloat = 0.0`.
@@ -107,15 +112,39 @@ struct Mark {
     let color: Color?
 }
 
+/// One pen stroke as it was laid down, before the clock is turned into
+/// seconds: its points on the page, the beat it starts on and how many it
+/// takes. A line is kept (Kept.swift) from these.
+struct Laid {
+    let points: [CGPoint]
+    let start: Double
+    let beats: Double
+    let ink: Double
+    let width: CGFloat
+    /// The colour the stroke was drawn in as 0xRRGGBB, or nil for ordinary ink.
+    let hex: Int?
+}
+
 /// A whole line, worked out for one page width.
 public struct Written {
     var marks: [Mark] = []
+    /// The strokes as they were laid down, and the clock they were laid down on, in beats.
+    var laid: [Laid] = []
+    var beatStarts: [Double] = []
+    var beats: Double = 0
+    /// How many letters the line counts as. With a speed in letters per second, that turns beats into seconds.
+    var letters = 0
+    /// The x-height the strokes were placed at, in points.
+    var xHeight: CGFloat = 1
     /// How much room the line takes: its widest row, and the height of all its rows.
-    public private(set) var size: CGSize = .zero
+    public internal(set) var size: CGSize = .zero
     /// When the last stroke ends.
     public private(set) var duration: TimeInterval = 0
     /// When each word starts, for the haptic ticks.
     public private(set) var wordStarts: [TimeInterval] = []
+
+    /// Nothing written yet. A line that was kept starts from this (Kept.swift).
+    init() {}
 
     /// The text as words: split at any white space, with the crossing-out
     /// marks taken out. `struck` holds the numbers of the words that are
@@ -194,7 +223,7 @@ public struct Written {
         var previous: Character? = nil
         /// True when the text had a line break before the word about to be placed.
         var broken = false
-        var pending: [(points: [CGPoint], start: Double, beats: Double, ink: Double, width: CGFloat, color: Color?)] = []
+        var pending: [(points: [CGPoint], start: Double, beats: Double, ink: Double, width: CGFloat, color: Int?)] = []
         var starts: [Double] = []
         /// The words crossed out and not yet struck through: where their ink runs, row by row.
         var toStrike: [(from: CGFloat, to: CGFloat, baseline: CGFloat)] = []
@@ -314,7 +343,7 @@ public struct Written {
                         let rx = dx * cos(tilt) - dy * sin(tilt) + pivot.x - ry * CGFloat(slant)
                         return CGPoint(x: origin.x + rx * xHeight, y: origin.y + ry * xHeight)
                     }
-                    pending.append((placed, clock, beats, ink, nib * glyph.width(of: strokeIndex), glyph.color(of: strokeIndex)))
+                    pending.append((placed, clock, beats, ink, nib * glyph.width(of: strokeIndex), glyph.hex(of: strokeIndex)))
                     clock += beats
                 }
 
@@ -370,7 +399,7 @@ public struct Written {
                 }
                 let beats = (0.25 + 0.5 * pow(Double(length), 0.75)) * Pen.signatureCare
                 let placed = stroke.map { CGPoint(x: ($0.x - left) * unit, y: base + $0.y * unit) }
-                pending.append((placed, clock, beats, 0.95, nib * glyph.width(of: strokeIndex), glyph.color(of: strokeIndex)))
+                pending.append((placed, clock, beats, 0.95, nib * glyph.width(of: strokeIndex), glyph.hex(of: strokeIndex)))
                 clock += beats
             }
             // A letter takes about two beats, pauses included. Counting the
@@ -380,16 +409,27 @@ public struct Written {
             signedTo = base + bottom * unit + edge
         }
 
-        // Scale the beats so the line takes as long as that many letters should.
-        let seconds = clock > 0 && lettersPerSecond > 0
-            ? max(0.4, Double(letterCount) / lettersPerSecond) / clock
-            : 0
-        marks = pending.map {
-            Mark(path: Written.smooth($0.points), start: $0.start * seconds, duration: $0.beats * seconds, ink: $0.ink, width: $0.width, color: $0.color)
-        }
-        wordStarts = starts.map { $0 * seconds }
-        duration = clock * seconds
+        laid = pending.map { Laid(points: $0.points, start: $0.start, beats: $0.beats, ink: $0.ink, width: $0.width, hex: $0.color) }
+        beatStarts = starts
+        self.beats = clock
+        self.letters = letterCount
+        self.xHeight = xHeight
         size = CGSize(width: widest, height: signedTo ?? baseline + Pen.descent * xHeight)
+        settle(lettersPerSecond)
+    }
+
+    /// Turns the beats into seconds, so the line takes as long as that many
+    /// letters should, and makes the strokes ready to draw. The last step of
+    /// working a line out, whether from a text or from a line that was kept.
+    mutating func settle(_ lettersPerSecond: Double) {
+        let seconds = beats > 0 && lettersPerSecond > 0
+            ? max(0.4, Double(letters) / lettersPerSecond) / beats
+            : 0
+        marks = laid.map {
+            Mark(path: Written.smooth($0.points), start: $0.start * seconds, duration: $0.beats * seconds, ink: $0.ink, width: $0.width, color: $0.hex.map { Color(hex: UInt32($0)) })
+        }
+        wordStarts = beatStarts.map { $0 * seconds }
+        duration = beats * seconds
     }
 
     /// The moment up to which the pen may write when it is allowed `count`
