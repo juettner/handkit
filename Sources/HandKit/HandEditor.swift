@@ -121,6 +121,19 @@ private enum SmallPicture {
     static let fill: CGFloat = 0.92
 }
 
+/// The page with room to spare, in points.
+private enum Wide {
+    /// The widest the page's column gets, its margins included.
+    static let page: CGFloat = 960
+    /// The least room, inside the margins, that takes two columns: an iPad
+    /// held upright has it, a phone or an iPad sharing its screen does not.
+    static let least: CGFloat = 700
+    /// Between the two columns.
+    static let gap: CGFloat = 40
+    /// The least the second column is left with.
+    static let side: CGFloat = 300
+}
+
 /// The app icon, as fractions of its side.
 private enum Icon {
     /// The line: thick, so the icon still reads when it is small.
@@ -150,6 +163,10 @@ public struct HandEditor: View {
     private let hints: [String: String]
     /// Whether the page asks for the app's icon.
     private let asksForIcon: Bool
+    /// Whether the page has the tools of somebody building an app with the hand.
+    private let showsTools: Bool
+    /// The character to open at, or nil for the first one not drawn yet.
+    private let start: String?
 
     @State private var index = 0
     /// Finished strokes of the letter being drawn, in fractions of the square.
@@ -210,6 +227,14 @@ public struct HandEditor: View {
     ///   - icon: whether the page asks for the app's icon: an "app icon" entry
     ///     in the row of pictures, where the square is the icon. Turn it off
     ///     if people using your app can reach this page.
+    ///   - tools: whether the page has what somebody building an app needs:
+    ///     sending the hand as a file and loading one, "by hand" or "typed",
+    ///     and pictures kept under a name. An app whose own pages do the
+    ///     sending passes false, and the page is only for drawing letters.
+    ///     Pictures named in `drawings` are asked for either way.
+    ///   - start: the character to open at (one of `characters`, or letters
+    ///     already drawn joined). Left out, the page opens at the first
+    ///     character not drawn yet.
     ///   - onClose: what "back" does. Left out, it dismisses the page (pops it
     ///     off a NavigationStack, or closes the sheet it was shown in).
     @MainActor
@@ -222,6 +247,8 @@ public struct HandEditor: View {
         sizes: [String: CGSize] = [:],
         hints: [String: String] = [:],
         icon: Bool = true,
+        tools: Bool = true,
+        start: String? = nil,
         onClose: (() -> Void)? = nil
     ) {
         self.drawings = drawings
@@ -229,6 +256,8 @@ public struct HandEditor: View {
         self.sizes = sizes
         self.hints = hints
         self.asksForIcon = icon
+        self.showsTools = tools
+        self.start = start
         _hands = ObservedObject(wrappedValue: store)
         self.style = style
         self.sample = sample
@@ -240,7 +269,10 @@ public struct HandEditor: View {
     /// then the named drawings (their keys sort after every letter).
     private var all: [String] {
         let saved = hands.hand.glyphs.keys.filter { $0.count > 1 }
-        return Self.characters + Set(saved).union(added).union(asked).sorted()
+        // Without the tools, a picture the page was not asked for is not on it
+        // (a signature kept in the hand, say), so "skip" never walks into one.
+        let extra = Set(saved).union(added).union(asked).filter { showsTools || asked.contains($0) || Hand.drawingName(of: $0) == nil }
+        return Self.characters + extra.sorted()
     }
     /// The keys of the pictures the page asks for: the app's, in its order, then the icon.
     private var asked: [String] {
@@ -292,6 +324,7 @@ public struct HandEditor: View {
     }
     /// The keys of every picture: the ones the app asked for, in its order, then any others in the hand.
     private var pictures: [String] {
+        guard showsTools else { return asked }
         let others = Set(hands.hand.glyphs.keys).union(added).filter { Hand.drawingName(of: $0) != nil && !asked.contains($0) }
         return asked + others.sorted()
     }
@@ -325,6 +358,7 @@ public struct HandEditor: View {
                     Small("\(drawnCount) of \(Self.characters.count) drawn")
                     // Always in reach, at the top: this is how the hand leaves the
                     // device (AirDrop, Files, Mail) to be shipped inside an app.
+                    if showsTools {
                     ShareLink(item: hands.fileURL) {
                         Text("send my hand")
                             .font(style.font(TypeSize.small))
@@ -338,19 +372,28 @@ public struct HandEditor: View {
                     .disabled(hands.hand.isEmpty)
                     .opacity(hands.hand.isEmpty ? 0.45 : 1)
                     .accessibilityLabel("Send my hand as a file")
+                    }
                 }
                 .frame(minHeight: 24)
 
                 if trying {
                     trial
                 } else {
-                    drawing
+                    // GeometryReader says how much room there is, which decides
+                    // between one column and two. It puts what is inside it at
+                    // its top left corner, where the page starts anyway.
+                    GeometryReader { room in
+                        drawing(width: room.size.width)
+                    }
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 36)
             .padding(.top, 24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            // On a wide screen the page keeps to a column in the middle and does
+            // not stretch from edge to edge.
+            .frame(maxWidth: Wide.page, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity)
         }
         // The page's own words are the only chrome; the private views below read the style from here.
         .toolbar(.hidden, for: .navigationBar)
@@ -370,8 +413,10 @@ public struct HandEditor: View {
             iconURL = glyph.flatMap { writeIcon($0) }
         }
         .onAppear {
-            // Start at the first character that has not been drawn yet.
-            if let first = Self.characters.firstIndex(where: { (hands.hand.glyphs[$0] ?? []).isEmpty }) {
+            // Start where the app asked, or else at the first character that has not been drawn yet.
+            if let start, let asked = all.firstIndex(of: start) {
+                index = asked
+            } else if let first = Self.characters.firstIndex(where: { (hands.hand.glyphs[$0] ?? []).isEmpty }) {
                 index = first
             }
         }
@@ -379,122 +424,192 @@ public struct HandEditor: View {
 
     // MARK: - Drawing a letter
 
-    private var drawing: some View {
+    /// The page while drawing. On a phone it is one column, top to bottom. With
+    /// room to spare (an iPad, unless it is sharing the screen) it is two: the
+    /// square and the pen on the left, and on the right what has been kept and
+    /// what the page has to say, so the square does not sit under a tall stack
+    /// of rows with half the screen empty beside it.
+    private func drawing(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             strip
             if !pictures.isEmpty {
                 pictureRow
             }
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(isScribble ? "a scribble" : label(character))
-                    .font(style.font(isFreeform ? TypeSize.body : TypeSize.question))
-                    .foregroundStyle(style.ink)
-                // The last drawing kept (or the one picked), at the size the app shows it.
-                if let shownSize, let kept = hands.hand.glyphs[character], let glyph = picked.flatMap({ kept.indices.contains($0) ? kept[$0] : nil }) ?? kept.last {
-                    GlyphView(glyph, ink: style.ink)
-                        .frame(width: shownSize.width, height: shownSize.height)
-                        .accessibilityLabel("This drawing at the size the app shows it")
-                }
-                Small(drawnNote)
-                Spacer()
-                // Always there, dimmed until there is something to forget, so the
-                // square below never moves between one drawing and the next.
-                Word("forget", tone: .grey, disabled: timesDrawn == 0, size: TypeSize.small) { hands.forget(character) }
-                    .accessibilityLabel("Forget every drawing of this character")
-            }
-
-            previous
-            pickedLine
-
-            ruledSquare
-                .padding(.top, 8)
-
-            HStack(spacing: 24) {
-                Word("keep", disabled: blank) { keep(advance: true) }
-                    .accessibilityLabel("Keep this drawing and go to the next character")
-                Word("again", disabled: blank) { keep(advance: false) }
-                    .accessibilityLabel("Keep this drawing and draw the same character once more")
-                Word("clear", tone: .grey, disabled: blank) { strokes = []; inks = []; weights = []; current = [] }
-                Spacer()
-            }
-            .padding(.top, 8)
-            // The pen's colour, chosen stroke by stroke: draw the stem of an "i" in
-            // ink, switch to colour, and draw the heart. ColorPicker is the
-            // system's colour chooser; the round swatch opens it.
-            HStack(spacing: 24) {
-                Small("pen")
-                Word("ink", tone: inColour ? .faint : .ink, marked: !inColour) { inColour = false }
-                    .accessibilityLabel("Draw the next strokes in ink")
-                Word("colour", tone: inColour ? .ink : .faint, marked: inColour) { inColour = true }
-                    .accessibilityLabel("Draw the next strokes in colour")
-                ColorPicker("Pen colour", selection: $colour, supportsOpacity: false)
-                    .labelsHidden()
-                    .onChange(of: colour) { inColour = true }
-                Spacer()
-                // The pen's line, chosen stroke by stroke like its colour.
-                LineChoice(weight: $weight)
-            }
-            HStack(spacing: 24) {
-                Word("before", tone: .grey) { move(-1) }
-                    .accessibilityLabel("Previous character")
-                Word("skip", tone: .grey) { move(1) }
-                    .accessibilityLabel("Next character, without saving")
-                Spacer()
-                Word("try it", tone: .grey, disabled: hands.hand.isEmpty) {
-                    tries += 1
-                    trying = true
-                }
-            }
-
-            // The app's icon is a picture file, not something drawn while the app
-            // runs, so a kept drawing of it is turned into that picture and sent
-            // from here. The word is always there on the icon's entry, dimmed
-            // until a drawing is kept: a row that came and went would move the
-            // page under the pen.
-            if isIcon {
-                HStack(spacing: 24) {
-                    if let iconURL {
-                        ShareLink(item: iconURL) {
-                            Text("send the icon")
-                                .font(style.font(TypeSize.word))
-                                .foregroundStyle(style.ink)
-                                .frame(minHeight: 44)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(PressedStyle())
-                        .accessibilityLabel("Send the icon as a picture")
-                    } else {
-                        Word("send the icon", tone: .grey, disabled: true) {}
+            if width >= Wide.least {
+                HStack(alignment: .top, spacing: Wide.gap) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        titleRow
+                        ruledSquare
+                            .padding(.top, 8)
+                        keepRow
+                        penRow
+                        moveRow
                     }
-                    Spacer()
+                    // As wide as the square wants to be, less if the other column would be squeezed.
+                    .frame(width: min(squareSide, width - Wide.gap - Wide.side))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Small("kept so far")
+                            .frame(minHeight: 44)
+                        previous
+                        pickedLine
+                        iconRow
+                        advice
+                        joinRow
+                        nameRow
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }
-
-            // What the app says about this picture, if anything, then the page's own advice.
-            Small(hint + (isIcon
-                ? "The app's icon. The square is the icon: what you draw, where you draw it, as thick as you see it. The pale outline is where the corners are cut off. Keep it, then send the icon; it replaces icon.png in the app's AppIcon.appiconset. Keep more than one and the one you tap in the row is the one sent."
-                : shownSize != nil
-                ? "A picture the app shows small: about \(Int(shownSize?.width ?? 0)) by \(Int(shownSize?.height ?? 0)) points. Fill the pale box, with few strokes and clear gaps between them. The pen is as thick here, against the box, as the line will be there. Once kept, it is shown beside its name at its real size: if you cannot read it there, forget it and draw it simpler."
-                : drawingName != nil
-                ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen's colour or its line for part of it. Draw it more than once with again and the app can vary them."
-                : isScribble
-                ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
-                : "Draw it the way you write it, sitting on the line. Tap a drawing in the row above to make it occasional or rare, like a heart for a dot."))
                 .padding(.top, 8)
-
-            // Letters written as one shape. Name them here, then draw them like any other.
-            HStack(alignment: .lastTextBaseline, spacing: 16) {
-                Small("letters you join")
-                Line(placeholder: "th", text: $joining, size: TypeSize.word, capitalization: .never, autocorrect: false, onSubmit: join)
-                    .frame(width: 72)
-                    .accessibilityLabel("Letters you write joined")
-                Word("draw", tone: .grey, disabled: joining.trimmingCharacters(in: .whitespaces).count < 2, action: join)
-                    .accessibilityLabel("Draw these joined letters")
+            } else {
+                titleRow
+                previous
+                pickedLine
+                ruledSquare
+                    .padding(.top, 8)
+                keepRow
+                penRow
+                moveRow
+                iconRow
+                advice
+                joinRow
+                nameRow
             }
-            // A picture the app shows by name. An app that says which pictures it
-            // uses (the `drawings` parameter) has them in the row at the top, and
-            // this line is left out: typing a name is one more thing to get wrong.
-            if drawings.isEmpty {
+        }
+    }
+
+    /// How wide the square is when there is room: large for a picture or a
+    /// scribble, smaller for a letter or a number, where a big square made the
+    /// hand write bigger than it naturally does.
+    private var squareSide: CGFloat {
+        sizeClass == .regular ? (isFreeform ? 520 : 364) : 300
+    }
+
+    /// What is being drawn, how often it has been, and forgetting all of it.
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text(isScribble ? "a scribble" : label(character))
+                .font(style.font(isFreeform ? TypeSize.body : TypeSize.question))
+                .foregroundStyle(style.ink)
+            // The last drawing kept (or the one picked), at the size the app shows it.
+            if let shownSize, let kept = hands.hand.glyphs[character], let glyph = picked.flatMap({ kept.indices.contains($0) ? kept[$0] : nil }) ?? kept.last {
+                GlyphView(glyph, ink: style.ink)
+                    .frame(width: shownSize.width, height: shownSize.height)
+                    .accessibilityLabel("This drawing at the size the app shows it")
+            }
+            Small(drawnNote)
+            Spacer()
+            // Always there, dimmed until there is something to forget, so the
+            // square below never moves between one drawing and the next.
+            Word("forget", tone: .grey, disabled: timesDrawn == 0, size: TypeSize.small) { hands.forget(character) }
+                .accessibilityLabel("Forget every drawing of this character")
+        }
+    }
+
+    private var keepRow: some View {
+        HStack(spacing: 24) {
+            Word("keep", disabled: blank) { keep(advance: true) }
+                .accessibilityLabel("Keep this drawing and go to the next character")
+            Word("again", disabled: blank) { keep(advance: false) }
+                .accessibilityLabel("Keep this drawing and draw the same character once more")
+            Word("clear", tone: .grey, disabled: blank) { strokes = []; inks = []; weights = []; current = [] }
+            Spacer()
+        }
+        .padding(.top, 8)
+    }
+
+    /// The pen's color, chosen stroke by stroke: draw the stem of an "i" in
+    /// ink, switch to color, and draw the heart. ColorPicker is the system's
+    /// color chooser; the round swatch opens it.
+    private var penRow: some View {
+        HStack(spacing: 24) {
+            Small("pen")
+            Word("ink", tone: inColour ? .faint : .ink, marked: !inColour) { inColour = false }
+                .accessibilityLabel("Draw the next strokes in ink")
+            Word("color", tone: inColour ? .ink : .faint, marked: inColour) { inColour = true }
+                .accessibilityLabel("Draw the next strokes in color")
+            ColorPicker("Pen color", selection: $colour, supportsOpacity: false)
+                .labelsHidden()
+                .onChange(of: colour) { inColour = true }
+            Spacer()
+            // The pen's line, chosen stroke by stroke like its color.
+            LineChoice(weight: $weight)
+        }
+    }
+
+    private var moveRow: some View {
+        HStack(spacing: 24) {
+            Word("before", tone: .grey) { move(-1) }
+                .accessibilityLabel("Previous character")
+            Word("skip", tone: .grey) { move(1) }
+                .accessibilityLabel("Next character, without saving")
+            Spacer()
+            Word("try it", tone: .grey, disabled: hands.hand.isEmpty) {
+                tries += 1
+                trying = true
+            }
+        }
+    }
+
+    /// The app's icon is a picture file, not something drawn while the app
+    /// runs, so a kept drawing of it is turned into that picture and sent
+    /// from here. The word is always there on the icon's entry, dimmed until
+    /// a drawing is kept: a row that came and went would move the page under
+    /// the pen.
+    @ViewBuilder
+    private var iconRow: some View {
+        if isIcon {
+            HStack(spacing: 24) {
+                if let iconURL {
+                    ShareLink(item: iconURL) {
+                        Text("send the icon")
+                            .font(style.font(TypeSize.word))
+                            .foregroundStyle(style.ink)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressedStyle())
+                    .accessibilityLabel("Send the icon as a picture")
+                } else {
+                    Word("send the icon", tone: .grey, disabled: true) {}
+                }
+                Spacer()
+            }
+        }
+    }
+
+    /// What the app says about this picture, if anything, then the page's own advice.
+    private var advice: some View {
+        Small(hint + (isIcon
+            ? "The app's icon. The square is the icon: what you draw, where you draw it, as thick as you see it. The pale outline is where the corners are cut off. Keep it, then send the icon; it replaces icon.png in the app's AppIcon.appiconset. Keep more than one and the one you tap in the row is the one sent."
+            : shownSize != nil
+            ? "A picture the app shows small: about \(Int(shownSize?.width ?? 0)) by \(Int(shownSize?.height ?? 0)) points. Fill the pale box, with few strokes and clear gaps between them. The pen is as thick here, against the box, as the line will be there. Once kept, it is shown beside its name at its real size: if you cannot read it there, forget it and draw it simpler."
+            : drawingName != nil
+            ? "A picture, not writing: draw it any size, anywhere in the square. Change the pen's color or its line for part of it. Draw it more than once with again and the app can vary them."
+            : isScribble
+            ? "A heart, a star, anything. Now and then one follows a line. Draw a few with again; the size you draw it is the size it gets."
+            : "Draw it the way you write it, sitting on the line. Draw it two or three times with again, so repeated letters do not look stamped. Tap a kept drawing to make it occasional or rare, like a heart for a dot."))
+            .padding(.top, 8)
+    }
+
+    /// Letters written as one shape. Name them here, then draw them like any other.
+    private var joinRow: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 16) {
+            Small("letters you join")
+            Line(placeholder: "th", text: $joining, size: TypeSize.word, capitalization: .never, autocorrect: false, onSubmit: join)
+                .frame(width: 72)
+                .accessibilityLabel("Letters you write joined")
+            Word("draw", tone: .grey, disabled: joining.trimmingCharacters(in: .whitespaces).count < 2, action: join)
+                .accessibilityLabel("Draw these joined letters")
+        }
+    }
+
+    /// A picture the app shows by name. An app that says which pictures it
+    /// uses (the `drawings` parameter) has them in the row at the top, and
+    /// this line is left out: typing a name is one more thing to get wrong.
+    /// It is one of the tools, so a page without them leaves it out too.
+    @ViewBuilder
+    private var nameRow: some View {
+        if drawings.isEmpty && showsTools {
             HStack(alignment: .lastTextBaseline, spacing: 16) {
                 Small("a drawing, by name")
                 Line(placeholder: "envelope", text: $naming, size: TypeSize.word, capitalization: .never, autocorrect: false, onSubmit: name)
@@ -502,7 +617,6 @@ public struct HandEditor: View {
                     .accessibilityLabel("The name of a drawing")
                 Word("draw", tone: .grey, disabled: naming.trimmingCharacters(in: .whitespaces).isEmpty, action: name)
                     .accessibilityLabel("Draw a picture with this name")
-            }
             }
         }
     }
@@ -809,9 +923,7 @@ public struct HandEditor: View {
             )
         }
         .aspectRatio(1, contentMode: .fit)
-        // On an iPad: large for a picture or a scribble, smaller for a letter or a
-        // number, where a big square made the hand write bigger than it naturally does.
-        .frame(maxWidth: sizeClass == .regular ? (isFreeform ? 520 : 364) : 300)
+        .frame(maxWidth: squareSide)
         .overlay(Rectangle().stroke(style.edge, lineWidth: 1))
         .accessibilityLabel("Drawing square for \(label(character))")
     }
@@ -955,6 +1067,7 @@ public struct HandEditor: View {
                 Word("write it again", tone: .grey) { tries += 1 }
                 Word("more letters") { trying = false }
             }
+            if showsTools {
             HStack(spacing: 24) {
                 Word("by hand", tone: hands.enabled ? .ink : .faint, marked: hands.enabled) { hands.enabled = true }
                     .accessibilityLabel("Write in my hand")
@@ -975,6 +1088,7 @@ public struct HandEditor: View {
             Word("use a hand file", tone: .grey) { picking = true }
             if let fileNote {
                 Small(fileNote)
+            }
             }
             Spacer().frame(height: 24)
         }

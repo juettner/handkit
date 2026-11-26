@@ -12,6 +12,11 @@ and then, and sometimes a scribble follows the line.
 Pulled out of [your-person](https://github.com/juettner/your-person) so other
 apps can use it. No dependencies. iOS 17+ (the pen also builds for macOS 14+).
 
+There is an app too, in `App/`: **Handkit**, for iPhone and iPad, where
+anybody can draw a hand, write with it and send what it wrote. It is the
+library made into a product, and it ships by itself: see
+[App/README.md](App/README.md).
+
 There is an Android library too, in `android/`: the same pen in Kotlin and
 Jetpack Compose, reading the same `hand.json`. See "On Android" below.
 
@@ -23,9 +28,12 @@ Jetpack Compose, reading the same `hand.json`. See "On Android" below.
 | `Handwriting` | The view. `Handwriting(text:hand:)` writes a line with the pen. |
 | `Written` | The arithmetic behind the view: where each stroke goes and when. No views; testable. |
 | `Sketch` | The same drawing, made by the pen while you watch. |
+| `Handwriting.image(...)` | The finished line as a picture (a `UIImage`), for sending a note to somebody without the app. Same text, hand, size, width and seed: the same line the view shows. iOS only. |
+| `LetterView` | One drawing of a letter, small, sitting on its line at its own size: for a page that shows a whole alphabet. |
 | `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): pass their names to `HandEditor(drawings:)` and they get a row of their own on the drawing page. |
-| `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. |
-| `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. It also asks for the app's icon (the "app icon" entry in the row of pictures): there the square is the icon, and "send the icon" hands over the 1024 x 1024 `icon.png`. `HandEditor(icon: false)` leaves that out. For a picture your app shows very small, `HandEditor(drawings:labels:sizes:)` takes the size in points: the square then has a box of that shape to fill and shows each kept drawing at its real size. `hints:` takes a sentence about a picture (what it is of, where the app shows it), shown under the square while it is drawn. iOS only. |
+| `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. `reset()` forgets it all. |
+| `Tools/hand_subset.py` | Cuts a hand down to the letters of one line, for shipping a written line without shipping the hand. |
+| `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. It also asks for the app's icon (the "app icon" entry in the row of pictures): there the square is the icon, and "send the icon" hands over the 1024 x 1024 `icon.png`. `HandEditor(icon: false)` leaves that out. For a picture your app shows very small, `HandEditor(drawings:labels:sizes:)` takes the size in points: the square then has a box of that shape to fill and shows each kept drawing at its real size. `hints:` takes a sentence about a picture (what it is of, where the app shows it), shown under the square while it is drawn. `HandEditor(tools: false)` leaves out what only an app's builder needs (sending and loading the hand file, pictures by name), for an app whose own pages do that; `start:` opens the page at a character. On an iPad the page is two columns. iOS only. |
 | `SignaturePad` | The signing page: sign on a line, keep a few. Each is a `Glyph`, and `Handwriting(signatures:)` signs under a line with one of them. iOS only. |
 | `Tools/hand_font.py` | Turns a `hand.json` into a real `.ttf`, for text that cannot be drawn stroke by stroke (a text field being typed in). |
 | `Tools/hand_svg.py` | Writes one line with the pen and keeps it as an animated `.svg`, for a web page: the strokes are drawn in order, with no script and without publishing the hand. |
@@ -38,7 +46,9 @@ open Demo/HandKitDemo.xcodeproj
 
 Pick an iPhone simulator and Run. The demo is one page that writes whatever
 you type in your handwriting, and a word that opens the drawing page. All of
-it is in `Demo/HandKitDemo/DemoApp.swift`, about a hundred lines.
+it is in `Demo/HandKitDemo/DemoApp.swift`, about a hundred lines. It is the
+smallest app that uses the library, and it is also where the pictures P.S.
+needs are drawn. The app people would install is the other one, in `App/`.
 
 ## Adding it to an app
 
@@ -125,7 +135,7 @@ in Debug builds:
    picked between evenly), **occasional** (variety, about one time in five)
    or **rare** (a surprise, about one in thirty: an "i" dotted with a heart).
    "forget" removes just that one.
-3. Under the square, "ink" and "colour" set the pen's colour, and the three
+3. Under the square, "ink" and "color" set the pen's colour, and the three
    short lines beside them set its line: fine, medium or bold. Both are
    chosen stroke by stroke and kept with the stroke (`colors` and `widths`
    in the file), so a letter can be in ink with a red heart, and a picture

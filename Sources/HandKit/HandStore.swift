@@ -48,6 +48,8 @@ public final class HandStore: ObservableObject {
     public let fileURL: URL
 
     private let offKey: String
+    /// The hand shipped inside the app, if there is one.
+    private let shippedURL: URL?
 
     /// - Parameters:
     ///   - bundle: where the shipped hand is. An app passes nothing; a package passes `.module`.
@@ -57,7 +59,9 @@ public final class HandStore: ObservableObject {
         fileURL = folder.appendingPathComponent("\(name).json")
         offKey = "\(name)Off"
         enabled = !UserDefaults.standard.bool(forKey: "\(name)Off")
-        let shipped = bundle.url(forResource: name, withExtension: "json").flatMap { Hand(contentsOf: $0) }
+        let shippedAt = bundle.url(forResource: name, withExtension: "json")
+        shippedURL = shippedAt
+        let shipped = shippedAt.flatMap { Hand(contentsOf: $0) }
         let drawn = Hand(contentsOf: fileURL).flatMap { $0.isEmpty ? nil : $0 }
         hand = drawn ?? shipped ?? Hand()
     }
@@ -93,6 +97,15 @@ public final class HandStore: ObservableObject {
     public func forget(_ character: String) {
         hand.glyphs[character] = nil
         save()
+    }
+
+    /// Forgets every drawing: the hand is empty again, or back to the one
+    /// shipped in the app if there is one. There is no undoing it, so ask first.
+    public func reset() {
+        hand = Hand()
+        save()
+        let shipped = shippedURL.flatMap { Hand(contentsOf: $0) }
+        if let shipped { hand = shipped }
     }
 
     /// Replaces the hand with one from a file, such as letters drawn on an iPad
