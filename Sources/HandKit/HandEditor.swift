@@ -430,11 +430,19 @@ public struct HandEditor: View {
             // Start where the app asked, or else at the first character that has not been drawn yet.
             if let start, let asked = all.firstIndex(of: start) {
                 index = asked
-            } else if let first = Self.characters.firstIndex(where: { (hands.hand.glyphs[$0] ?? []).isEmpty }) {
-                index = first
-            } else if let next = waiting.first, let asked = all.firstIndex(of: next) {
-                // Every letter is drawn: on to the first picture the app is still waiting for.
-                index = asked
+            } else {
+                // The first character not drawn yet. But a picture the app is
+                // waiting for comes before the marks a note seldom needs (the
+                // "@" and what follows it): a hand can go years without a "^".
+                let first = Self.characters.firstIndex { (hands.hand.glyphs[$0] ?? []).isEmpty }
+                let seldom = Self.characters.firstIndex(of: "@") ?? Self.characters.count
+                if let first, first < seldom {
+                    index = first
+                } else if let next = waiting.first, let asked = all.firstIndex(of: next) {
+                    index = asked
+                } else if let first {
+                    index = first
+                }
             }
         }
     }

@@ -14,6 +14,7 @@
 //    WriteView.swift type a note, watch the pen write it, share the picture
 //    HandView.swift  every character, drawn or not, and the way to the drawing page
 //    KeepView.swift  back the hand up, bring one in, start over
+//    Pictures.swift  the pictures P.S. wants drawn, asked for with developer tools on
 //
 //  For a Java person: `@main` marks the class with `public static void
 //  main`. `WindowGroup` is the window; what is inside it is the first screen.
@@ -99,7 +100,19 @@ struct Root: View {
         // The drawing page takes the whole screen: nothing else should be in
         // reach of a hand that is drawing.
         .fullScreenCover(item: $drawing) { request in
-            HandEditor(style: Theme.style, icon: developer, tools: developer, start: request.start)
+            // With developer tools on, the page also asks for the pictures
+            // P.S. shows from this hand, one after another (Pictures.swift).
+            HandEditor(
+                style: Theme.style,
+                drawings: developer ? Pictures.names : [],
+                labels: Pictures.labels,
+                sizes: Pictures.sizes,
+                hints: Pictures.hints,
+                references: Pictures.references,
+                icon: developer,
+                tools: developer,
+                start: request.start
+            )
         }
         .task {
             // Straight from the welcome to the first letter.
