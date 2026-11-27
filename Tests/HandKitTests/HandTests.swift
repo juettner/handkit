@@ -285,4 +285,116 @@ final class HandTests: XCTestCase {
         // An empty drawing is not a signature.
         XCTAssertEqual(write([Glyph(strokes: [], advance: 1)]).marks.count, plain.marks.count)
     }
+
+    // MARK: - A line that is kept (Kept.swift)
+
+    /// A line with something of everything in it: two rows, a crossing-out, a color, a bold line and a signature.
+    private func everything(lettersPerSecond: Double = 15) -> Written {
+        let colored = Glyph(strokes: [[0, -1, 0.5, 0], [0.2, -1.4, 0.2, -1.4]], advance: 0.5, colors: [-1, 0xC8322B], widths: [1, 1.8])
+        let hand = Hand(glyphs: ["h": [stroke()], "i": [colored], "t": [stroke(0.7)]])
+        let signature = Glyph(strokes: [[0, 0, 2, -1, 4, 0]], advance: 4)
+        return Written("hi ~~hit~~ hi\ntit", hand: hand, xHeight: 10, width: 60, lettersPerSecond: lettersPerSecond, playful: false, signatures: [signature])
+    }
+
+    func testAKeptLineIsDrawnAgainStrokeForStroke() {
+        let first = everything()
+        XCTAssertGreaterThan(first.marks.count, 10)
+        // Shown again from what was kept: no text, no hand.
+        let again = Written(kept: first.kept, xHeight: 10, lettersPerSecond: 15)
+        XCTAssertEqual(first.laid.count, again.laid.count)
+        // Kept to a thousandth of an x-height, so at an x-height of 10 nothing has moved by more than a hundredth.
+        for (a, b) in zip(first.laid, again.laid) {
+            XCTAssertEqual(a.points.count, b.points.count)
+            for (p, q) in zip(a.points, b.points) {
+                XCTAssertEqual(p.x, q.x, accuracy: 0.006)
+                XCTAssertEqual(p.y, q.y, accuracy: 0.006)
+            }
+            XCTAssertEqual(a.width, b.width, accuracy: 0.001)
+            XCTAssertEqual(a.hex, b.hex)
+        }
+        for (a, b) in zip(first.marks, again.marks) {
+            XCTAssertEqual(a.start, b.start, accuracy: 0.001)
+            XCTAssertEqual(a.duration, b.duration, accuracy: 0.001)
+            XCTAssertEqual(a.ink, b.ink, accuracy: 0.001)
+        }
+        XCTAssertEqual(first.size.width, again.size.width, accuracy: 0.006)
+        XCTAssertEqual(first.size.height, again.size.height, accuracy: 0.006)
+        XCTAssertEqual(first.duration, again.duration, accuracy: 0.001)
+        XCTAssertEqual(first.wordStarts.count, again.wordStarts.count)
+        // And keeping what was shown again changes nothing more: the rounding happens once.
+        XCTAssertEqual(first.kept, again.kept)
+    }
+
+    func testAKeptLineSurvivesBeingSavedAndRead() throws {
+        let kept = everything().kept
+        let data = try XCTUnwrap(kept.data())
+        XCTAssertEqual(Kept(data: data), kept)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"v\":1"))
+        // The color of the one colored stroke is there; ordinary ink has no "c" at all, and nothing is written as null.
+        XCTAssertTrue(json.contains("\"c\":\(0xC8322B)"))
+        XCTAssertFalse(json.contains("null"))
+        XCTAssertTrue(kept.marks.contains { $0.c == nil })
+        // Nothing of the words is in it: a kept line is strokes.
+        XCTAssertFalse(json.contains("hi"))
+    }
+
+    func testAKeptLineCanBeDrawnAtAnySizeAndAnySpeed() {
+        let first = everything()
+        let kept = first.kept
+        let larger = Written(kept: kept, xHeight: 20, lettersPerSecond: 30)
+        XCTAssertEqual(first.size.width * 2, larger.size.width, accuracy: 0.02)
+        XCTAssertEqual(first.laid[3].points[0].x * 2, larger.laid[3].points[0].x, accuracy: 0.02)
+        XCTAssertEqual(first.laid[3].width * 2, larger.laid[3].width, accuracy: 0.002)
+        // Twice the speed: half the time.
+        XCTAssertEqual(first.duration / 2, larger.duration, accuracy: 0.001)
+        // No speed at all: every stroke is simply there, as when a line is not written out.
+        let there = Written(kept: kept, xHeight: 10, lettersPerSecond: 0)
+        XCTAssertEqual(there.duration, 0)
+        XCTAssertTrue(there.marks.allSatisfy { $0.start == 0 && $0.duration == 0 })
+        // Kept from a line that was simply there, it can still be written out later: the beats are kept, not the seconds.
+        let fromStill = Written(kept: everything(lettersPerSecond: 0).kept, xHeight: 10, lettersPerSecond: 15)
+        XCTAssertEqual(first.duration, fromStill.duration, accuracy: 0.001)
+    }
+
+    func testAKeptLineDoesNotReflowAndIsDrawnSmallerOnANarrowerPage() {
+        let kept = everything().kept
+        let widest = CGFloat(kept.size[0])
+        // A wider page, or no limit: as asked.
+        XCTAssertEqual(kept.fitted(xHeight: 10, width: widest * 10 + 200), 10)
+        XCTAssertEqual(kept.fitted(xHeight: 10, width: .greatestFiniteMagnitude), 10)
+        // Half the room: half the size, and the same rows.
+        let narrow = kept.fitted(xHeight: 10, width: widest * 5)
+        XCTAssertEqual(narrow, 5, accuracy: 0.0001)
+        let smaller = Written(kept: kept, xHeight: narrow, lettersPerSecond: 0)
+        XCTAssertEqual(smaller.size.width, widest * 5, accuracy: 0.0001)
+        XCTAssertEqual(smaller.marks.count, everything().marks.count)
+    }
+
+    func testWhatIsNotAKeptLineIsNotReadAsOne() {
+        XCTAssertNil(Kept(data: Data("not json".utf8)))
+        XCTAssertNil(Kept(data: Data("{}".utf8)))
+        // From a newer version of the pen than this one knows how to draw.
+        XCTAssertNil(Kept(data: Data(#"{"v":2,"size":[1,1],"beats":1,"letters":1,"words":[0],"marks":[]}"#.utf8)))
+        XCTAssertNil(Kept(data: Data(#"{"v":1,"size":[1],"beats":1,"letters":1,"words":[0],"marks":[]}"#.utf8)))
+    }
+
+    /// The same few strokes the Android tests read (aLineKeptOnAnIPhoneIsReadTheSameHere),
+    /// with the same numbers expected, so a line kept on one kind of phone is
+    /// the same line on the other.
+    func testALineKeptOnAnAndroidPhoneIsReadTheSameHere() throws {
+        let json = #"{"beats":12.5,"letters":4,"marks":[{"d":1.1,"i":0.93,"p":[0,1.95,0.4,1.2,0.8,1.95],"s":0,"w":0.13},{"c":13120043,"d":0.25,"i":0.88,"p":[1.4,1.95],"s":6.1,"w":0.14}],"size":[4.2,3.9],"v":1,"words":[0,6.1]}"#
+        let kept = try XCTUnwrap(Kept(data: Data(json.utf8)))
+        XCTAssertEqual(kept.size, [4.2, 3.9])
+        XCTAssertEqual(kept.letters, 4)
+        XCTAssertEqual(kept.marks[1].c, 0xC8322B)
+        XCTAssertNil(kept.marks[0].c)
+        let line = Written(kept: kept, xHeight: 10, lettersPerSecond: 10)
+        // Four letters at ten a second is 0.4 seconds, spread over 12.5 beats.
+        XCTAssertEqual(line.duration, 0.4, accuracy: 1e-9)
+        XCTAssertEqual(line.wordStarts[1], 6.1 * 0.4 / 12.5, accuracy: 1e-9)
+        XCTAssertEqual(line.laid[0].points, [CGPoint(x: 0, y: 19.5), CGPoint(x: 4, y: 12), CGPoint(x: 8, y: 19.5)])
+        XCTAssertEqual(line.laid[1].width, 1.4, accuracy: 1e-9)
+        XCTAssertEqual(line.size.width, 42, accuracy: 1e-9)
+    }
 }

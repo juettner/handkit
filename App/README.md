@@ -2,7 +2,7 @@
 
 Draw your handwriting, write with it, send what it wrote. One app for iPhone
 and iPad, built on the library in this repository and on nothing else: no
-account, no server, no third-party code.
+account, no server of its own, no third-party code.
 
 ```bash
 open App/Handkit.xcodeproj
@@ -20,10 +20,40 @@ honest test.)
 | Write | `WriteView.swift` | Type a note, watch the pen write it, change the ink, the size and the lean, share the note as a picture. |
 | My hand | `HandView.swift` | Every character in a box, drawn or not, with how far along the hand is. Tapping a box opens the drawing page there. The signature is here too. |
 | Keep | `KeepView.swift` | Send the hand as a file, bring one in from another device, start over. "Developer tools" is the switch for everything only an app builder needs. |
+| Publish | `Publish.swift` | With developer tools on, a part of Keep: send the hand to a server that an app reads its handwriting from. See "Publishing a hand" below. |
 | The drawing page | `HandEditor`, in the library | The same page the library gives any app, without the developer's tools unless the switch is on. |
 
 `Main.swift` starts the app and holds the tab bar. `Theme.swift` has the
 colors, the type and the few shapes the pages share.
+
+## Publishing a hand
+
+Drawing never sends anything anywhere: the hand is saved on the device as
+you draw, and that is all. Publishing is a deliberate act. With developer
+tools on, the Keep page has a "Publish" part with two things to fill in:
+
+- **Server**: the address of an API that takes hands, such as
+  `ps.example.com`. Only `https` is used, because the key travels with it.
+- **Publishing key**: that server's key (for P.S., its `HAND_PUBLISH_KEY`).
+  It is kept in the Keychain, on this device only.
+
+"Publish my hand" asks once and then sends the whole hand, as it is at that
+moment, with `PUT <server>/api/hand` and `Authorization: Bearer <key>`. The
+server keeps every hand it is sent and never changes one; the one sent last
+is the one new notes are written in, and notes written before keep the hand
+they were written in. Publishing an earlier hand again (bring its file in,
+publish) takes a newer one back.
+
+Under the button the page says where things stand: never published,
+published and unchanged, or drawn in since. That is worked out on the
+device, from a mark of the hand as it was last published from here.
+
+Two things to know before this goes to the store. It is the one place where
+the app talks to a server, and only to one the person typed in themselves,
+so "nothing is collected" stays true as long as that server is yours. And
+it is behind developer tools on purpose: if it ever becomes how anybody
+sends their hand to a server you run, the privacy answers in App Store
+Connect change with it.
 
 ## iPhone and iPad
 

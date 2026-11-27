@@ -8,6 +8,9 @@
 //  Pencil gets onto a phone. There is no account and no server in between:
 //  the file goes wherever the share sheet sends it.
 //
+//  With developer tools on there is one more way out: publishing the hand to
+//  a server of your own (Publish.swift). That, too, only happens when asked.
+//
 //  Bringing a file in replaces the letters on this device, and so does
 //  starting over, so both ask first.
 //
@@ -75,12 +78,17 @@ struct KeepView: View {
                         .foregroundStyle(Theme.ink)
                 }
                 .tint(Theme.ink)
-                Note("Adds to the drawing page what an app built on HandKit needs: pictures kept under a name, an app icon, and the hand file within reach.")
+                Note("Adds to the drawing page what an app built on HandKit needs: pictures kept under a name, an app icon, and the hand file within reach. And, below, publishing the hand to a server.")
+            }
+
+            // Sending the hand to a server an app reads it from: see Publish.swift.
+            if developer {
+                PublishPart()
             }
 
             Part("About") {
                 Note("Handkit \(version)")
-                Note("Your handwriting is kept on this device. Handkit has no account, no server and no analytics, and nothing leaves the device unless you send it.")
+                Note("Your handwriting is kept on this device. Handkit has no account, no server of its own and no analytics, and nothing leaves the device unless you send it.")
             }
         }
         // An alert is the small box in the middle of the screen, on a phone and

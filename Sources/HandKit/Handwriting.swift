@@ -47,6 +47,14 @@
 //  line is on the page. An app can keep time with the pen that way: dim a
 //  light for a moment on every word, say.
 //
+//  A line can be kept as it was written, and shown again from that alone
+//  (see Kept.swift). `onKept` hands over the line once it is on the page,
+//  exactly as it was laid out for this page; give that back as `kept` and
+//  the same strokes are drawn, whatever has become of the hand since:
+//
+//      Handwriting(text: text, hand: hand, onKept: { kept in save(kept) })
+//      Handwriting(text: text, kept: kept)
+//
 //  It can also sign. Give it `signatures` (drawings made on SignaturePad) and
 //  the pen puts one under the writing when the words are done. With an empty
 //  text and an empty hand it writes the signature alone, which is how an app
@@ -67,8 +75,17 @@ private struct WritingLayout: Layout {
     let looseness: Double
     let slant: Double
     let signatures: [Glyph]
+    /// A line that was kept: then it is the strokes that are sized, and the text and the hand are not asked.
+    var kept: Kept? = nil
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        if let kept {
+            // A kept line does not reflow: it is as wide as it was written, or as wide as it is offered if that is less.
+            let offered = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+            let unit = kept.fitted(xHeight: xHeight, width: offered ?? .greatestFiniteMagnitude)
+            let size = Written(kept: kept, xHeight: unit, lettersPerSecond: 0).size
+            return CGSize(width: offered ?? size.width.rounded(.up), height: size.height)
+        }
         // Asked for its ideal size (no width), it answers with one long line.
         guard let width = proposal.width, width.isFinite, width > 0 else {
             let size = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: 0, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures).size
@@ -119,6 +136,8 @@ private final class PenClock {
 private final class WrittenCache {
     var key = ""
     var written: Written?
+    /// The text `written` is of, so a line is never handed back as another text's.
+    var text = ""
 }
 
 public struct Handwriting: View {
@@ -145,6 +164,8 @@ public struct Handwriting: View {
     /// One person's signature, drawn one or more times (see SignaturePad). The
     /// pen signs under the writing with one of them. Empty for no signature.
     var signatures: [Glyph] = []
+    /// For a line shown from `kept`: whether it was signed, so VoiceOver can say so.
+    var keptSigned = false
     /// Written backwards, to be read in a mirror.
     var mirrored = false
     /// What the weather has done to the ink.
@@ -155,6 +176,10 @@ public struct Handwriting: View {
     var onWord: (() -> Void)? = nil
     /// Called once the whole line is on the page (written or tapped through).
     var onDone: (() -> Void)? = nil
+    /// A line that was kept (see Kept.swift). When given, it is what is drawn: the hand is not used, and the text is only read aloud.
+    var kept: Kept? = nil
+    /// Called once with the line as it was written for this page, when it is on the page. Not called for a line shown from `kept`.
+    var onKept: ((Kept) -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Follows the text size chosen in Settings, as a font would.
@@ -184,7 +209,8 @@ public struct Handwriting: View {
         weather: Weathering = .dry,
         words: Int? = nil,
         onWord: (() -> Void)? = nil,
-        onDone: (() -> Void)? = nil
+        onDone: (() -> Void)? = nil,
+        onKept: ((Kept) -> Void)? = nil
     ) {
         self.text = text
         self.hand = hand
@@ -203,6 +229,42 @@ public struct Handwriting: View {
         self.words = words
         self.onWord = onWord
         self.onDone = onDone
+        self.onKept = onKept
+    }
+
+    /// A line that was kept, shown again from its strokes. `text` is what
+    /// VoiceOver reads; it is not written. The rest are as above. A hand is
+    /// not asked for, and a signature is not either: if the line was signed,
+    /// the signature is among its strokes.
+    public init(
+        text: String,
+        kept: Kept,
+        size: CGFloat = 30,
+        ink: Color = HandStyle.journal.ink,
+        speed: Double = Pen.lettersPerSecond,
+        haptics: Bool = true,
+        dryTime: TimeInterval = Pen.dryTime,
+        signed: Bool = false,
+        mirrored: Bool = false,
+        weather: Weathering = .dry,
+        words: Int? = nil,
+        onWord: (() -> Void)? = nil,
+        onDone: (() -> Void)? = nil
+    ) {
+        self.text = text
+        self.hand = Hand()
+        self.kept = kept
+        self.size = size
+        self.ink = ink
+        self.speed = speed
+        self.haptics = haptics
+        self.dryTime = dryTime
+        self.keptSigned = signed
+        self.mirrored = mirrored
+        self.weather = weather
+        self.words = words
+        self.onWord = onWord
+        self.onDone = onDone
     }
 
     private var xHeight: CGFloat { size * Pen.xHeightPerSize * textScale }
@@ -210,7 +272,7 @@ public struct Handwriting: View {
     private var bleed: CGFloat { (xHeight * 0.5).rounded(.up) }
 
     public var body: some View {
-        WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures) {
+        WritingLayout(text: text, hand: hand, xHeight: xHeight, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures, kept: kept) {
             TimelineView(.animation(paused: still)) { context in
                 Canvas { graphics, canvasSize in
                     // The canvas is larger than the line by `bleed` on every side (see below), so the line's
@@ -255,17 +317,42 @@ public struct Handwriting: View {
     /// What VoiceOver says: the words (without the marks that cross some of them out), and that it is signed.
     private var spoken: String {
         let words = Hand.unstruck(text)
-        if signatures.isEmpty { return words }
+        if signatures.isEmpty && !keptSigned { return words }
         return words.isEmpty ? "Signature" : "\(words). Signed."
     }
 
     private func written(for width: CGFloat) -> Written {
-        let key = "\(text)|\(width)|\(xHeight)|\(speed)|\(playful)|\(seed)|\(looseness)|\(slant)|\(signatures.count)"
+        let key = "\(text)|\(width)|\(xHeight)|\(speed)|\(playful)|\(seed)|\(looseness)|\(slant)|\(signatures.count)|\(kept?.marks.count ?? -1)"
         if cache.key == key, let written = cache.written { return written }
-        let written = Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
+        let written = laidOut(width: width)
         cache.key = key
         cache.written = written
+        cache.text = text
         return written
+    }
+
+    /// The line worked out for a page of that width: from the kept strokes if there are any, from the text and the hand if not.
+    private func laidOut(width: CGFloat) -> Written {
+        if let kept {
+            return Written(kept: kept, xHeight: kept.fitted(xHeight: xHeight, width: width), lettersPerSecond: speed)
+        }
+        return Written(text, hand: hand, xHeight: xHeight, width: width, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
+    }
+
+    /// Hands the line over to be kept, as it was laid out for this page. The
+    /// canvas works that out when it first draws, which can be a moment
+    /// after this is asked (a line that is simply there is "done" at once),
+    /// so this waits for it, for a couple of seconds at most.
+    private func handBack() async {
+        guard let onKept, kept == nil else { return }
+        for _ in 0..<40 {
+            if Task.isCancelled { return }
+            if let written = cache.written, cache.text == text {
+                if !written.marks.isEmpty { onKept(written.kept) }
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     private func draw(_ written: Written, at elapsed: TimeInterval, in graphics: inout GraphicsContext) {
@@ -322,10 +409,11 @@ public struct Handwriting: View {
     private func write() async {
         skipped = false
         // Timing does not depend on where the lines break, so any width will do here.
-        let plan = Written(text, hand: hand, xHeight: xHeight, width: .greatestFiniteMagnitude, lettersPerSecond: speed, playful: playful, seed: seed, looseness: looseness, slant: slant, signatures: signatures)
+        let plan = laidOut(width: .greatestFiniteMagnitude)
         if reduceMotion || speed <= 0 || plan.marks.isEmpty {
             still = true
             onDone?()
+            await handBack()
             return
         }
 
@@ -346,6 +434,7 @@ public struct Handwriting: View {
         if !skipped { await sleep(until: plan.duration) }
         if Task.isCancelled { return }
         onDone?()
+        await handBack()
 
         // Let the last strokes dry, then stop redrawing.
         if !skipped { await sleep(until: plan.duration + dryTime + 0.1) }
@@ -371,6 +460,7 @@ public struct Handwriting: View {
             if !done, hold.time >= plan.duration {
                 done = true
                 onDone?()
+                await handBack()
             }
             if hold.time >= plan.duration + dryTime + 0.1 { break }
             try? await Task.sleep(for: .milliseconds(100))

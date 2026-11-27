@@ -28,6 +28,7 @@ Jetpack Compose, reading the same `hand.json`. See "On Android" below.
 | `Handwriting` | The view. `Handwriting(text:hand:)` writes a line with the pen. |
 | `Written` | The arithmetic behind the view: where each stroke goes and when. No views; testable. |
 | `Sketch` | The same drawing, made by the pen while you watch. |
+| `Kept` | A line the pen wrote, kept stroke for stroke: where every stroke went and when, measured in x-heights, as plain JSON. `Handwriting(onKept:)` hands one over once the line is on the page, and `Handwriting(text:kept:)` shows it again from the strokes alone, with no hand. For a note that should look in ten years as it did the morning it was read, whatever has become of the hand, the phone or the pen since. |
 | `Handwriting.image(...)` | The finished line as a picture (a `UIImage`), for sending a note to somebody without the app. Same text, hand, size, width and seed: the same line the view shows. iOS only. |
 | `LetterView` | One drawing of a letter, small, sitting on its line at its own size: for a page that shows a whole alphabet. |
 | `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): pass their names to `HandEditor(drawings:)` and they get a row of their own on the drawing page. |

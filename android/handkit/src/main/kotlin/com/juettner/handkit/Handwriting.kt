@@ -60,6 +60,14 @@
 //               counts something (steps, say) and passes the count. While
 //               the pen is held a tap does not finish the line.
 //
+//  A line can be kept as it was written, and shown again from that alone
+//  (see Kept.kt). `onKept` hands over the line once it is on the page,
+//  exactly as it was laid out for this page; give that back as `kept` and
+//  the same strokes are drawn, whatever has become of the hand since:
+//
+//      Handwriting(text = text, hand = hand, onKept = { save(it) })
+//      Handwriting(text = text, hand = Hand(), kept = kept)
+//
 //  It can also sign. Give it `signatures` (drawings made on SignaturePad) and
 //  the pen puts one under the writing when the words are done. With an empty
 //  text and an empty hand it writes the signature alone, which is how an app
@@ -137,6 +145,9 @@ import kotlin.math.pow
  * @param followsTextSize whether the writing grows with the text size chosen in the phone's settings, as type does.
  * @param onWord called as the pen starts each word (the moment of the tick). Not called for a line that is simply there.
  * @param onDone called once the whole line is on the page (written or tapped through).
+ * @param kept a line that was kept (see Kept.kt). When given, it is what is drawn: the hand is not used, and the text is only read aloud.
+ * @param keptSigned for a line shown from `kept`: whether it was signed, so TalkBack can say so.
+ * @param onKept called once with the line as it was written for this page, when it is on the page. Not called for a line shown from `kept`.
  */
 @Composable
 fun Handwriting(
@@ -160,6 +171,9 @@ fun Handwriting(
     followsTextSize: Boolean = true,
     onWord: (() -> Unit)? = null,
     onDone: (() -> Unit)? = null,
+    kept: Kept? = null,
+    keptSigned: Boolean = false,
+    onKept: ((Kept) -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val view = LocalView.current
@@ -168,7 +182,7 @@ fun Handwriting(
     val xHeight = with(density) { size.toPx() } * Pen.xHeightPerSize * (if (followsTextSize) density.fontScale else 1f)
 
     // Everything that decides where the strokes go, in one value: when any of it changes, the line is worked out again.
-    val recipe = Recipe(text, hand, xHeight, speed, playful, seed, looseness, slant, signatures)
+    val recipe = Recipe(text, hand, xHeight, speed, playful, seed, looseness, slant, signatures, kept)
     val cache = remember { LineCache() }
 
     // True once nothing is moving or drying; the clock below is then not running.
@@ -181,8 +195,25 @@ fun Handwriting(
     // The newest `onDone`, without restarting the clock when the caller hands over a new function object.
     val done by rememberUpdatedState(onDone)
     val word by rememberUpdatedState(onWord)
+    val keep by rememberUpdatedState(onKept)
     // The newest count of words a held pen is allowed, read by the clock on every frame.
     val allowed by rememberUpdatedState(words)
+
+    // Hands the line over to be kept, as it was laid out for this page. The page's width is known once the
+    // line has been measured, which can be a frame or two after this is asked (a line that is simply there
+    // is "done" at once), so this waits for it, for a second or so at most.
+    suspend fun handBack() {
+        val wanted = keep ?: return
+        if (kept != null) return
+        repeat(60) {
+            val line = cache.laidOut(recipe)
+            if (line != null) {
+                if (line.marks.isNotEmpty()) wanted(line.kept())
+                return
+            }
+            withFrameNanos { }
+        }
+    }
 
     // The clock. Starts when the view appears, and again when the text changes.
     LaunchedEffect(text) {
@@ -192,6 +223,7 @@ fun Handwriting(
         if (reduceMotion || speed <= 0 || plan.marks.isEmpty()) {
             still = true
             done?.invoke()
+            handBack()
             return@LaunchedEffect
         }
         elapsed = 0.0
@@ -219,6 +251,7 @@ fun Handwriting(
                 if (!told && time >= plan.duration) {
                     told = true
                     done?.invoke()
+                    handBack()
                 }
                 if (time >= plan.duration + dryTime + 0.1) break
             }
@@ -241,17 +274,21 @@ fun Handwriting(
             if (!told && now >= plan.duration) {
                 told = true
                 done?.invoke()
+                handBack()
             }
             // Let the last strokes dry, then stop redrawing.
             if (now >= plan.duration + dryTime + 0.1) break
         }
-        if (!told) done?.invoke()
         still = true
+        if (!told) {
+            done?.invoke()
+            handBack()
+        }
     }
 
     // The strokes mean nothing to TalkBack; the words do (without the marks that cross some of them out).
     val words = Hand.unstruck(text)
-    val spoken = if (signatures.isEmpty()) words else if (words.isEmpty()) "Signature" else "$words. Signed."
+    val spoken = if (signatures.isEmpty() && !keptSigned) words else if (words.isEmpty()) "Signature" else "$words. Signed."
 
     var shaped = modifier.clearAndSetSemantics { contentDescription = spoken }
     if (tappable) {
@@ -353,17 +390,23 @@ internal data class Recipe(
     val looseness: Double,
     val slant: Double,
     val signatures: List<Glyph>,
+    /** A line that was kept: then it is the strokes that are laid out, and the text and the hand are not asked. */
+    val kept: Kept? = null,
 ) {
-    fun written(width: Double) = Written(text, hand, xHeight, width, speed, playful, seed, looseness, slant, signatures)
+    fun written(width: Double) =
+        if (kept != null) Written(kept, kept.fitted(xHeight, width), speed)
+        else Written(text, hand, xHeight, width, speed, playful, seed, looseness, slant, signatures)
 
     /**
      * Comparing two hands letter by letter on every frame would be slow, and
      * a hand is never changed in place, so "the same hand" here means the
-     * very same object (`===`, Java's `==` on references).
+     * very same object (`===`, Java's `==` on references). A kept line has no
+     * use for a hand, so there the hand is not compared at all.
      */
     override fun equals(other: Any?): Boolean =
-        other is Recipe && text == other.text && hand === other.hand && xHeight == other.xHeight && speed == other.speed &&
-            playful == other.playful && seed == other.seed && looseness == other.looseness && slant == other.slant && signatures === other.signatures
+        other is Recipe && text == other.text && (kept != null || hand === other.hand) && xHeight == other.xHeight && speed == other.speed &&
+            playful == other.playful && seed == other.seed && looseness == other.looseness && slant == other.slant && signatures === other.signatures &&
+            kept === other.kept
 
     override fun hashCode(): Int = text.hashCode() * 31 + seed
 }
@@ -398,6 +441,9 @@ internal class LineCache {
         strokes = null
         return fresh
     }
+
+    /** The line as it was last worked out for a real page (not for one long row), if that was for this recipe. */
+    fun laidOut(recipe: Recipe): Written? = written?.takeIf { this.recipe == recipe && width > 0 && width < Double.MAX_VALUE }
 
     fun strokes(recipe: Recipe, width: Double): List<DrawnStroke> {
         val line = written(recipe, width)
