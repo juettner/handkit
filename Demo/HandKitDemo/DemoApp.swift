@@ -47,9 +47,11 @@ struct DemoView: View {
 
     /// Pictures kept in the hand beside the letters, in the order the drawing
     /// page lists them. P.S. shows the first two as its envelopes, "drawer"
-    /// and "map" pinned at the left of its reader's row of envelopes, and
-    /// the last three in the strip at the top of its reader's page.
-    static let pictures = ["envelope-sealed", "envelope-open", "drawer", "map", "doodle", "status-signal", "status-wifi", "status-battery"]
+    /// and "map" pinned at the left of its reader's row of envelopes,
+    /// "seashell" on a note that came with the writer's voice, a "doodle"
+    /// in the corner of some notes, and the last three in the strip at the
+    /// top of its reader's page.
+    static let pictures = ["envelope-sealed", "envelope-open", "drawer", "map", "seashell", "doodle", "status-signal", "status-wifi", "status-battery"]
     /// What the drawing page calls the ones whose names would read oddly.
     static let labels = ["status-signal": "signal", "status-wifi": "wifi", "status-battery": "battery"]
     /// The pictures P.S. only ever shows small, at these sizes in points, so
@@ -69,6 +71,7 @@ struct DemoView: View {
     static let hints = [
         "drawer": "The drawer: where the envelopes that cannot be opened yet are kept. P.S. pins it at the lower left of the reader's row of envelopes, with \"drawer\" written under it. Only the first one you keep is used.",
         "map": "The map: everywhere a note has found the reader. P.S. pins it beside the drawer, with \"map\" written under it. Only the first one you keep is used.",
+        "seashell": "A seashell, the kind you would hold to your ear to hear the sea. P.S. puts it on a note that came with the writer's voice, about as wide as three fingers, and the pen draws it stroke by stroke when the note is first opened: the reader holds the phone to their ear to hear it. Only the first one you keep is used.",
     ]
 
     /// The signatures, kept in the hand as a drawing named "signature", so
