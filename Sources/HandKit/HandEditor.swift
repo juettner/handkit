@@ -72,6 +72,12 @@
 //  with, so a picture can have a bold outline and fine detail, and a letter
 //  drawn bold is written bold. Medium is the pen's usual line (Pen.nib).
 //
+//  A picture can be traced. An app that asks for pictures may give a few
+//  ways to draw each (`references`), and they are shown beside the square.
+//  Tap one and it lies in the square, pale, where the picture goes: draw
+//  over it, leave parts out, add your own. Only your ink is kept. Tap it
+//  again and the square is bare.
+//
 //  The row along the top jumps to anything: "scribble", then every letter.
 //
 //  The order puts first what ordinary sentences use most: small letters, then
@@ -121,6 +127,17 @@ private enum SmallPicture {
     static let fill: CGFloat = 0.92
 }
 
+/// A picture laid in the square to be traced (see `references` on HandEditor).
+private enum Tracing {
+    /// The part of the square it is fitted to, as fractions of the square,
+    /// for a picture with no box of its own: the middle, with room all round.
+    static let area = CGRect(x: 0.14, y: 0.14, width: 0.72, height: 0.72)
+    /// How thick its line is against the pen's: thinner, so the ink covers it.
+    static let line: CGFloat = 0.4
+    /// How large each one is shown beside the square, in points.
+    static let side: CGFloat = 84
+}
+
 /// The page with room to spare, in points.
 private enum Wide {
     /// The widest the page's column gets, its margins included.
@@ -161,8 +178,8 @@ public struct HandEditor: View {
     private let sizes: [String: CGSize]
     /// What to say about a picture while it is being drawn, by its name.
     private let hints: [String: String]
-    /// A picture of a picture: one way to draw it, shown beside the app's hint, by its name.
-    private let references: [String: Glyph]
+    /// Pictures of a picture: a few ways to draw it, to pick from and trace, by its name.
+    private let references: [String: [Glyph]]
     /// Whether the page asks for the app's icon.
     private let asksForIcon: Bool
     /// Whether the page has the tools of somebody building an app with the hand.
@@ -195,6 +212,8 @@ public struct HandEditor: View {
     @State private var joining = ""
     /// Which of the drawings already kept is picked, in the row above the square.
     @State private var picked: Int? = nil
+    /// Which of the app's ways to draw this picture lies in the square to be traced, if any.
+    @State private var tracing: Int? = nil
     /// What is typed on the "a drawing, by name" line.
     @State private var naming = ""
     @State private var fileNote: String? = nil
@@ -226,10 +245,11 @@ public struct HandEditor: View {
     ///   - hints: a sentence or two about a picture, by its name, shown under
     ///     the square while it is being drawn, ahead of the page's own advice:
     ///     what the picture is of and where your app shows it.
-    ///   - references: one way to draw a picture, by its name, shown small and
-    ///     grey beside the hint while it is being drawn: something to look at,
-    ///     not to trace. A `Glyph`, so it can be a drawing from another hand or
-    ///     a few strokes written out in code.
+    ///   - references: a few ways to draw a picture, by its name, shown small
+    ///     and grey beside the square while it is being drawn. Tapping one
+    ///     lays it in the square, pale, to be traced over; it is never kept,
+    ///     only the ink drawn on top of it. Each is a `Glyph`, so it can be a
+    ///     drawing from another hand or a few strokes written out in code.
     ///   - icon: whether the page asks for the app's icon: an "app icon" entry
     ///     in the row of pictures, where the square is the icon. Turn it off
     ///     if people using your app can reach this page.
@@ -252,7 +272,7 @@ public struct HandEditor: View {
         labels: [String: String] = [:],
         sizes: [String: CGSize] = [:],
         hints: [String: String] = [:],
-        references: [String: Glyph] = [:],
+        references: [String: [Glyph]] = [:],
         icon: Bool = true,
         tools: Bool = true,
         start: String? = nil,
@@ -317,8 +337,10 @@ public struct HandEditor: View {
         guard let name = drawingName, let said = hints[name] else { return "" }
         return said + " "
     }
-    /// One way to draw the picture being drawn, if the app gave one.
-    private var reference: Glyph? { drawingName.flatMap { references[$0] } }
+    /// The ways to draw the picture being drawn, if the app gave any.
+    private var guides: [Glyph] { drawingName.flatMap { references[$0] } ?? [] }
+    /// The one lying in the square to be traced, if one was picked.
+    private var traced: Glyph? { tracing.flatMap { guides.indices.contains($0) ? guides[$0] : nil } }
     /// The pictures the app asked for that have no drawing yet, in its order.
     private var waiting: [String] {
         drawings.map { Hand.drawingKey($0) }.filter { (hands.hand.glyphs[$0] ?? []).isEmpty }
@@ -604,16 +626,33 @@ public struct HandEditor: View {
         }
     }
 
-    /// One way to draw this picture, if the app gave one: small and grey, to
-    /// look at while drawing and not to trace.
+    /// The ways to draw this picture, if the app gave any: small and grey, in
+    /// a row. Tap one and it lies in the square to be traced; tap it again
+    /// and it is taken away. Like the row of kept drawings, the one picked
+    /// has a border in ink.
     @ViewBuilder
     private var referenceRow: some View {
-        if let reference {
-            HStack(alignment: .center, spacing: 16) {
-                GlyphView(reference, ink: style.grey)
-                    .frame(width: Self.referenceSide, height: Self.referenceSide)
-                    .accessibilityHidden(true)
-                Small("For reference: one way to draw it. Yours does not have to match.")
+        if !guides.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(Array(guides.enumerated()), id: \.offset) { number, guide in
+                            Button { tracing = tracing == number ? nil : number } label: {
+                                GlyphView(guide, ink: style.grey)
+                                    .padding(10)
+                                    .frame(width: Tracing.side, height: Tracing.side)
+                                    .overlay(Rectangle().stroke(tracing == number ? style.ink : style.edge, lineWidth: 1))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PressedStyle())
+                            .accessibilityLabel("Trace over way \(number + 1) of drawing \(label(character))")
+                            .accessibilityAddTraits(tracing == number ? .isSelected : [])
+                        }
+                    }
+                }
+                Small(traced == nil
+                    ? "To trace: tap one and it lies in the square, pale. Draw over it and add what you like."
+                    : "Draw over it, and add what you like. Only your ink is kept. Tap it again to take it away.")
             }
             .padding(.top, 12)
         }
@@ -687,8 +726,6 @@ public struct HandEditor: View {
 
     /// How tall the row of drawings already kept is.
     private static let thumb: CGFloat = 56
-    /// How large a picture's reference is shown, in points.
-    private static let referenceSide: CGFloat = 120
 
     /// The drawings already kept for this character, small, in the order they
     /// were drawn: what the pen will pick between. Tap one to pick it, and
@@ -722,7 +759,11 @@ public struct HandEditor: View {
         .frame(height: Self.thumb)
         .padding(.top, 4)
         // Another character has other drawings: nothing of this one is picked there.
-        .onChange(of: character) { picked = nil }
+        // Nor is anything laid out to trace: that is chosen picture by picture.
+        .onChange(of: character) {
+            picked = nil
+            tracing = nil
+        }
     }
 
     /// What can be done with the picked drawing: how often the pen uses it,
@@ -887,6 +928,20 @@ public struct HandEditor: View {
                 let smallNib = shownSize.map { SmallPicture.line * smallBox($0).width * s / ($0.width * SmallPicture.fill) } ?? 0
                 // This is the usual line: a stroke drawn fine or bold is a multiple of it.
                 let nib = isIcon ? Icon.line * s : max(letterNib, smallNib)
+
+                // A picture to trace, under the ink: fitted to the box the app
+                // shows the picture in, or else to the middle of the square.
+                let area = shownSize.map { smallBox($0) } ?? Tracing.area
+                if let traced, let fitted = GlyphView.fit(traced, in: CGSize(width: area.width * s, height: area.height * s)) {
+                    for stroke in fitted.strokes where !stroke.isEmpty {
+                        let placed = stroke.map { CGPoint(x: $0.x + area.minX * s, y: $0.y + area.minY * s) }
+                        graphics.stroke(
+                            Written.smooth(placed),
+                            with: .color(style.faint),
+                            style: StrokeStyle(lineWidth: max(1.5, nib * Tracing.line), lineCap: .round, lineJoin: .round)
+                        )
+                    }
+                }
 
                 // The lighter guides are for letters. A scribble or a picture is any size, anywhere.
                 if !isFreeform {
