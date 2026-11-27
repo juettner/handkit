@@ -22,6 +22,7 @@ honest test.)
 | Keep | `KeepView.swift` | Send the hand as a file, bring one in from another device, start over. "Developer tools" is the switch for everything only an app builder needs. |
 | Publish | `Publish.swift` | With developer tools on, a part of Keep: send the hand to a server that an app reads its handwriting from. See "Publishing a hand" below. |
 | The drawing page | `HandEditor`, in the library | The same page the library gives any app, without the developer's tools unless the switch is on. |
+| The pictures | `Pictures.swift` | With developer tools on, the drawing page asks for the pictures P.S. shows from the hand (the envelopes, the drawer, the candle, the seashell and the rest), one after another, each with its size, a sentence about it and one way to draw it. |
 
 `Main.swift` starts the app and holds the tab bar. `Theme.swift` has the
 colors, the type and the few shapes the pages share.
