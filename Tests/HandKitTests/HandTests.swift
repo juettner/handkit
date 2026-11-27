@@ -21,6 +21,11 @@ final class HandTests: XCTestCase {
         Hand(glyphs: Dictionary(uniqueKeysWithValues: keys.map { ($0, [stroke()]) }))
     }
 
+    func testThePackageCarriesAHandThatCanWrite() throws {
+        let packaged = try XCTUnwrap(Hand.packaged)
+        XCTAssertTrue(packaged.covers("Good morning, love. 7 o'clock?"))
+    }
+
     func testJoinedLettersAreTakenFirst() {
         let pieces = hand("t", "h", "e", "th").pieces(of: "the")
         XCTAssertEqual(pieces?.map(\.count), [2, 1])

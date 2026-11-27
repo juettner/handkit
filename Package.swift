@@ -20,7 +20,11 @@ let package = Package(
         .library(name: "HandKit", targets: ["HandKit"]),
     ],
     targets: [
-        .target(name: "HandKit"),
+        // hand.json is the hand the package carries, for an app that ships none
+        // of its own (see HandStore.swift). A resource is a file packed beside
+        // the code, like something under src/main/resources; `.copy` means
+        // "as it is". Code in this target finds it through `Bundle.module`.
+        .target(name: "HandKit", resources: [.copy("hand.json")]),
         .testTarget(name: "HandKitTests", dependencies: ["HandKit"]),
     ]
 )

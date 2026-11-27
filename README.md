@@ -32,7 +32,8 @@ Jetpack Compose, reading the same `hand.json`. See "On Android" below.
 | `Handwriting.image(...)` | The finished line as a picture (a `UIImage`), for sending a note to somebody without the app. Same text, hand, size, width and seed: the same line the view shows. iOS only. |
 | `LetterView` | One drawing of a letter, small, sitting on its line at its own size: for a page that shows a whole alphabet. |
 | `GlyphView` | Shows one drawing as a picture, fitted to its frame. For drawings kept under a name (`hand.drawings(named: "envelope")`): pass their names to `HandEditor(drawings:)` and they get a row of their own on the drawing page. |
-| `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app) and saves what the editor draws. `reset()` forgets it all. |
+| `HandStore` | Loads `hand.json` (drawn on this phone if there is one, otherwise the one shipped in the app, otherwise the one HandKit carries) and saves what the editor draws. `reset()` forgets it all. |
+| `Hand.packaged` | The hand HandKit carries, `Sources/HandKit/hand.json`: what the pen writes in when an app ships no hand of its own. An app that is for drawing a hand turns it away with `HandKitPackagedHand` set to `NO` in its Info.plist (on Android, `HandStore.start(context, packaged = false)`). |
 | `Tools/hand_subset.py` | Cuts a hand down to the letters of one line, for shipping a written line without shipping the hand. |
 | `HandEditor` | The drawing page: draw each character on a ruled square, try a sentence, send the hand as a file. It also asks for the app's icon (the "app icon" entry in the row of pictures): there the square is the icon, and "send the icon" hands over the 1024 x 1024 `icon.png`. `HandEditor(icon: false)` leaves that out. For a picture your app shows very small, `HandEditor(drawings:labels:sizes:)` takes the size in points: the square then has a box of that shape to fill and shows each kept drawing at its real size. `hints:` takes a sentence about a picture (what it is of, where the app shows it), shown under the square while it is drawn, and `references:` a few ways to draw it (each a `Glyph`), shown small and grey beside the square: tap one and it lies pale in the square to be traced over, and only the ink drawn on top is kept. When the letters, digits and common punctuation are drawn the page opens at the first picture in `drawings` not drawn yet (before the marks a note seldom needs, the "@" and after), and "keep" on a picture goes on to the next one still waiting. `HandEditor(tools: false)` leaves out what only an app's builder needs (sending and loading the hand file, pictures by name), for an app whose own pages do that; `start:` opens the page at a character. On an iPad the page is two columns. iOS only. |
 | `SignaturePad` | The signing page: sign on a line, keep a few. Each is a `Glyph`, and `Handwriting(signatures:)` signs under a line with one of them. iOS only. |
@@ -47,7 +48,8 @@ open Demo/HandKitDemo.xcodeproj
 ```
 
 Pick an iPhone simulator and Run. The demo is one page that writes whatever
-you type in your handwriting, and a word that opens the drawing page. All of
+you type in handwriting (the hand HandKit carries, until you draw your own),
+and a word that opens the drawing page. All of
 it is in `Demo/HandKitDemo/DemoApp.swift`, about a hundred lines. It is the
 smallest app that uses the library, and it is also where the pictures P.S.
 needs are drawn. The app people would install is the other one, in `App/`.
@@ -72,7 +74,7 @@ struct Note: View {
         if let hand = hands.active, hand.covers("good morning, love") {
             Handwriting(text: "good morning, love", hand: hand, size: 30)
         } else {
-            Text("good morning, love")   // no hand shipped yet, or a letter is missing
+            Text("good morning, love")   // handwriting is switched off, or a letter is missing
         }
     }
 }
@@ -145,6 +147,7 @@ in Debug builds:
 4. "try it" writes a sentence with what you have so far.
 5. "send my hand as a file" hands `hand.json` to AirDrop, Files or Mail.
 6. Add that file to your app target as `hand.json`. `HandStore.shared` finds it.
+   Until you do, the pen writes in the hand HandKit carries.
 
 Letters drawn on the device win over the shipped file, so you see your work
 as you go. A hand drawn elsewhere (an iPad and a Pencil) comes in with "use a
@@ -211,7 +214,7 @@ Android 9+. One dependency, Kotlin's own JSON library.
 | `Written`, `Pen` | `Written.kt`: the same arithmetic, the same numbers |
 | `Handwriting` | `Handwriting.kt`: `Handwriting(text = "...", hand = hand)`, with the same `mirrored`, `weather`, `words` and `onWord` as the Swift one |
 | `GlyphView`, `Sketch` | `GlyphView.kt` |
-| `HandStore` | `HandStore.kt`: reads `hand.json` from the app's `assets` |
+| `HandStore` | `HandStore.kt`: reads `hand.json` from the app's `assets`, and HandKit's own hand when there is none |
 | `SignaturePad` | `SignaturePad.kt` |
 | `HandEditor` | not on Android. Draw the hand on an iPad; the file is the same. |
 
@@ -224,7 +227,7 @@ val hand = HandStore.shared.active
 if (hand != null && hand.covers("good morning, love")) {
     Handwriting(text = "good morning, love", hand = hand, size = 30.dp)
 } else {
-    Text("good morning, love")   // no hand shipped yet, or a letter is missing
+    Text("good morning, love")   // handwriting is switched off, or a letter is missing
 }
 ```
 

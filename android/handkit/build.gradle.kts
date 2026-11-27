@@ -39,11 +39,48 @@ android {
     }
 }
 
-// One test reads the pen's numbers out of the Swift source, to hold the Kotlin ones to them. Gradle skips
-// a test run when nothing it knows about has changed, so it has to be told that this file is something
-// the tests depend on. Otherwise a change to Written.swift would not run them again.
+// The hand HandKit carries is ONE file, kept with the Swift package:
+// Sources/HandKit/hand.json. Rather than keep a second copy here that could
+// fall behind, the build copies it into the library's assets each time, as
+// handkit/hand.json (HandStore.PACKAGED), and it travels inside the library
+// into whichever app uses it.
+//
+// A Gradle task is a small class with declared inputs and outputs; Gradle
+// runs it only when an input has changed. Handing the task to the Android
+// plugin as a "generated source directory" is what makes every step that
+// reads the assets (packaging, lint, the tests) wait for it.
+abstract class CopyHand : DefaultTask() {
+    @get:InputFile
+    abstract val from: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val into: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        from.get().asFile.copyTo(into.get().asFile.resolve("handkit/hand.json"), overwrite = true)
+    }
+}
+
+val packagedHand = layout.projectDirectory.file("../../Sources/HandKit/hand.json")
+
+val copyPackagedHand = tasks.register<CopyHand>("copyPackagedHand") {
+    from.set(packagedHand)
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(copyPackagedHand, CopyHand::into)
+    }
+}
+
+// Two tests read files of the Swift package: the pen's numbers out of Written.swift, to hold the Kotlin
+// ones to them, and the hand HandKit carries, to see that Kotlin reads it. Gradle skips a test run when
+// nothing it knows about has changed, so it has to be told that these files are something the tests
+// depend on. Otherwise a change to either would not run them again.
 tasks.withType<Test>().configureEach {
     inputs.file(layout.projectDirectory.file("../../Sources/HandKit/Written.swift"))
+    inputs.file(packagedHand)
 }
 
 dependencies {

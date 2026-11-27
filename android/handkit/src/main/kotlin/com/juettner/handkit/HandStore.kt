@@ -3,16 +3,22 @@
 //
 //  Where a hand lives on the phone.
 //
-//  Two places, looked in this order:
+//  Three places, looked in this order:
 //
 //    1. hand.json in the app's private files folder: a hand brought onto
 //       this phone with `use` (one sent over from the iPad, say). If there is
 //       one, it wins.
 //    2. hand.json shipped inside the app (in its `assets` folder): the hand
 //       everybody gets.
+//    3. HandKit's own hand, which the library carries in its assets as
+//       handkit/hand.json: the hand an app gets when it ships none, so the
+//       pen writes from the first run. It is the same file as on iOS
+//       (Sources/HandKit/hand.json); the build copies it in.
 //
-//  If neither exists the hand is empty and `active` is null: the app should
-//  show its text some other way.
+//  An app that wants no hand but its own passes `packaged = false` to
+//  `start`. Then only the first two places are looked in, and if they are
+//  both empty the hand is empty and `active` is null: the app should show its
+//  text some other way.
 //
 //  The drawing page (HandEditor) exists on iOS only, where an iPad and a
 //  Pencil are. A hand drawn there is the same JSON here.
@@ -38,7 +44,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import java.io.File
 
-class HandStore private constructor(context: Context, name: String) {
+class HandStore private constructor(context: Context, name: String, packaged: Boolean) {
     private val file = File(context.filesDir, "$name.json")
     private val settings = context.getSharedPreferences("handkit", Context.MODE_PRIVATE)
     private val offKey = "${name}Off"
@@ -63,7 +69,8 @@ class HandStore private constructor(context: Context, name: String) {
     init {
         val brought = runCatching { Hand.from(file.readBytes()) }.getOrNull()?.takeIf { !it.isEmpty }
         // `assets` are files packed into the app as they are. A missing one throws, which here just means "no hand shipped".
-        val shipped = runCatching { context.assets.open("$name.json").use { Hand.from(it.readBytes()) } }.getOrNull()
+        fun asset(path: String) = runCatching { context.assets.open(path).use { Hand.from(it.readBytes()) } }.getOrNull()
+        val shipped = asset("$name.json") ?: if (packaged) asset(PACKAGED) else null
         hand = brought ?: shipped ?: Hand()
     }
 
@@ -76,13 +83,19 @@ class HandStore private constructor(context: Context, name: String) {
     }
 
     companion object {
+        /** Where HandKit's own hand is in the assets. In a folder of its own, so it is never taken for an app's hand.json. */
+        const val PACKAGED = "handkit/hand.json"
+
         @Volatile
         private var store: HandStore? = null
 
-        /** Reads the hand. Call once when the app starts (in Application.onCreate); calling it again does nothing. */
-        fun start(context: Context, name: String = "hand"): HandStore =
+        /**
+         * Reads the hand. Call once when the app starts (in Application.onCreate); calling it again does nothing.
+         * `packaged = false` turns HandKit's own hand away, for an app that wants its own or none.
+         */
+        fun start(context: Context, name: String = "hand", packaged: Boolean = true): HandStore =
             store ?: synchronized(this) {
-                store ?: HandStore(context.applicationContext, name).also { store = it }
+                store ?: HandStore(context.applicationContext, name, packaged).also { store = it }
             }
 
         /** The store most apps want. `start` must have been called first. */

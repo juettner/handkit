@@ -47,6 +47,17 @@ class HandTests {
         signatures: List<Glyph> = emptyList(),
     ) = Written(text, hand, xHeight, width, lettersPerSecond, playful, seed, looseness, slant, signatures)
 
+    /** On a phone HandStore reads this from the library's assets; the build copies it there from this file. */
+    @Test
+    fun thePackageCarriesAHandThatCanWrite() {
+        // Tests run with the module's folder (android/handkit) as the working directory.
+        val file = java.io.File("../../Sources/HandKit/hand.json")
+        assertTrue("hand.json was not found at ${file.absolutePath}", file.exists())
+        val packaged = Hand.from(file.readBytes())
+        assertNotNull(packaged)
+        assertTrue(packaged!!.covers("Good morning, love. 7 o'clock?"))
+    }
+
     @Test
     fun joinedLettersAreTakenFirst() {
         val pieces = hand("t", "h", "e", "th").piecesOf("the")

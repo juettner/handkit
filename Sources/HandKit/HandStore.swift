@@ -3,19 +3,29 @@
 //
 //  Where a hand lives on the phone.
 //
-//  Two places, looked in this order:
+//  Three places, looked in this order:
 //
 //    1. hand.json in the app's Application Support folder: letters drawn on
 //       this device with HandEditor. If there are any, they win, so you see
 //       your work as you draw.
 //    2. hand.json shipped inside the app (in its bundle): the hand everybody
 //       gets.
-//
-//  If neither exists the hand is empty and `active` is nil: the app should
-//  show its text some other way.
+//    3. hand.json inside HandKit itself (the file beside this one): the hand
+//       an app gets when it ships none, so the pen writes from the first run.
+//       It is also `Hand.packaged`.
 //
 //  To ship a hand: draw it in HandEditor, tap "send my hand as a file", and
 //  add the file to the app target as hand.json.
+//
+//  An app that is for drawing a hand wants to start with none, not with
+//  somebody else's. It says so in its Info.plist:
+//
+//      <key>HandKitPackagedHand</key>
+//      <false/>
+//
+//  Then only the first two places are looked in. If they are both empty the
+//  hand is empty and `active` is nil: the app should show its text some
+//  other way.
 //
 //  An app that does not let people draw never has a saved file, so it always
 //  reads the shipped hand. An app that fetches hands from somewhere else (a
@@ -32,7 +42,7 @@ import SwiftUI
 
 @MainActor
 public final class HandStore: ObservableObject {
-    /// The store most apps want: hand.json in the main bundle, hand.json in Application Support.
+    /// The store most apps want: hand.json in Application Support, hand.json in the main bundle, HandKit's own.
     public static let shared = HandStore()
 
     @Published public private(set) var hand: Hand
@@ -50,9 +60,17 @@ public final class HandStore: ObservableObject {
     private let offKey: String
     /// The hand shipped inside the app, if there is one.
     private let shippedURL: URL?
+    /// False when the app's Info.plist turns HandKit's own hand away.
+    private let usesPackaged: Bool
+
+    /// The hand to go back to when nothing has been drawn: the app's, or else HandKit's own.
+    private var fallback: Hand? {
+        shippedURL.flatMap { Hand(contentsOf: $0) } ?? (usesPackaged ? Hand.packaged : nil)
+    }
 
     /// - Parameters:
-    ///   - bundle: where the shipped hand is. An app passes nothing; a package passes `.module`.
+    ///   - bundle: where the shipped hand is, and the Info.plist that may turn HandKit's own hand
+    ///     away (`HandKitPackagedHand`). An app passes nothing; a package passes `.module`.
     ///   - name: the file's name without ".json". Change it to keep more than one hand.
     public init(bundle: Bundle = .main, name: String = "hand") {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -61,7 +79,10 @@ public final class HandStore: ObservableObject {
         enabled = !UserDefaults.standard.bool(forKey: "\(name)Off")
         let shippedAt = bundle.url(forResource: name, withExtension: "json")
         shippedURL = shippedAt
-        let shipped = shippedAt.flatMap { Hand(contentsOf: $0) }
+        // A key that is not in the Info.plist reads as nil, which here means "yes".
+        let packaged = bundle.object(forInfoDictionaryKey: "HandKitPackagedHand") as? Bool ?? true
+        usesPackaged = packaged
+        let shipped = shippedAt.flatMap { Hand(contentsOf: $0) } ?? (packaged ? Hand.packaged : nil)
         let drawn = Hand(contentsOf: fileURL).flatMap { $0.isEmpty ? nil : $0 }
         hand = drawn ?? shipped ?? Hand()
     }
@@ -99,13 +120,13 @@ public final class HandStore: ObservableObject {
         save()
     }
 
-    /// Forgets every drawing: the hand is empty again, or back to the one
-    /// shipped in the app if there is one. There is no undoing it, so ask first.
+    /// Forgets every drawing: the hand is back to the one shipped in the app,
+    /// or HandKit's own, or empty if there is neither. There is no undoing it,
+    /// so ask first.
     public func reset() {
         hand = Hand()
         save()
-        let shipped = shippedURL.flatMap { Hand(contentsOf: $0) }
-        if let shipped { hand = shipped }
+        if let fallback { hand = fallback }
     }
 
     /// Replaces the hand with one from a file, such as letters drawn on an iPad
@@ -126,4 +147,15 @@ public final class HandStore: ObservableObject {
             try? data.write(to: fileURL, options: .atomic)
         }
     }
+}
+
+extension Hand {
+    /// The hand HandKit carries: hand.json, beside this file. `HandStore` falls
+    /// back on it; an app that keeps its hands some other way can use it too.
+    /// Nil only if the file has gone missing from the package.
+    ///
+    /// `Bundle.module` is the package's own resources (the app's are
+    /// `Bundle.main`). A `static let` is read once, the first time it is asked for.
+    public static let packaged: Hand? = Bundle.module.url(forResource: "hand", withExtension: "json")
+        .flatMap { Hand(contentsOf: $0) }
 }

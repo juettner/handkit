@@ -4,7 +4,8 @@
 # One Swift file is on the list too: Written.swift holds the pen's numbers,
 # and one of the Android tests reads that file to check that Written.kt has
 # the same ones. So changing a number in Swift runs the Android tests, which
-# is how the two pens are kept writing alike.
+# is how the two pens are kept writing alike. So is hand.json, the hand the
+# package carries: the Android build packs that same file into the library.
 #
 # The Swift package itself is not tested here: that needs a Mac runner.
 name: Android
@@ -14,11 +15,13 @@ on:
     paths:
       - android/**
       - Sources/HandKit/Written.swift
+      - Sources/HandKit/hand.json
       - .github/workflows/android.yml
   pull_request:
     paths:
       - android/**
       - Sources/HandKit/Written.swift
+      - Sources/HandKit/hand.json
       - .github/workflows/android.yml
 
 # This job only reads the repository.
