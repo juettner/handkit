@@ -161,6 +161,8 @@ public struct HandEditor: View {
     private let sizes: [String: CGSize]
     /// What to say about a picture while it is being drawn, by its name.
     private let hints: [String: String]
+    /// A picture of a picture: one way to draw it, shown beside the app's hint, by its name.
+    private let references: [String: Glyph]
     /// Whether the page asks for the app's icon.
     private let asksForIcon: Bool
     /// Whether the page has the tools of somebody building an app with the hand.
@@ -224,6 +226,10 @@ public struct HandEditor: View {
     ///   - hints: a sentence or two about a picture, by its name, shown under
     ///     the square while it is being drawn, ahead of the page's own advice:
     ///     what the picture is of and where your app shows it.
+    ///   - references: one way to draw a picture, by its name, shown small and
+    ///     grey beside the hint while it is being drawn: something to look at,
+    ///     not to trace. A `Glyph`, so it can be a drawing from another hand or
+    ///     a few strokes written out in code.
     ///   - icon: whether the page asks for the app's icon: an "app icon" entry
     ///     in the row of pictures, where the square is the icon. Turn it off
     ///     if people using your app can reach this page.
@@ -246,6 +252,7 @@ public struct HandEditor: View {
         labels: [String: String] = [:],
         sizes: [String: CGSize] = [:],
         hints: [String: String] = [:],
+        references: [String: Glyph] = [:],
         icon: Bool = true,
         tools: Bool = true,
         start: String? = nil,
@@ -255,6 +262,7 @@ public struct HandEditor: View {
         self.labels = labels
         self.sizes = sizes
         self.hints = hints
+        self.references = references
         self.asksForIcon = icon
         self.showsTools = tools
         self.start = start
@@ -308,6 +316,12 @@ public struct HandEditor: View {
     private var hint: String {
         guard let name = drawingName, let said = hints[name] else { return "" }
         return said + " "
+    }
+    /// One way to draw the picture being drawn, if the app gave one.
+    private var reference: Glyph? { drawingName.flatMap { references[$0] } }
+    /// The pictures the app asked for that have no drawing yet, in its order.
+    private var waiting: [String] {
+        drawings.map { Hand.drawingKey($0) }.filter { (hands.hand.glyphs[$0] ?? []).isEmpty }
     }
     /// The size the app shows the picture being drawn at, if it said. Nil for
     /// everything else, and for a size that is not a size.
@@ -418,6 +432,9 @@ public struct HandEditor: View {
                 index = asked
             } else if let first = Self.characters.firstIndex(where: { (hands.hand.glyphs[$0] ?? []).isEmpty }) {
                 index = first
+            } else if let next = waiting.first, let asked = all.firstIndex(of: next) {
+                // Every letter is drawn: on to the first picture the app is still waiting for.
+                index = asked
             }
         }
     }
@@ -453,6 +470,7 @@ public struct HandEditor: View {
                         previous
                         pickedLine
                         iconRow
+                        referenceRow
                         advice
                         joinRow
                         nameRow
@@ -470,6 +488,7 @@ public struct HandEditor: View {
                 penRow
                 moveRow
                 iconRow
+                referenceRow
                 advice
                 joinRow
                 nameRow
@@ -577,6 +596,21 @@ public struct HandEditor: View {
         }
     }
 
+    /// One way to draw this picture, if the app gave one: small and grey, to
+    /// look at while drawing and not to trace.
+    @ViewBuilder
+    private var referenceRow: some View {
+        if let reference {
+            HStack(alignment: .center, spacing: 16) {
+                GlyphView(reference, ink: style.grey)
+                    .frame(width: Self.referenceSide, height: Self.referenceSide)
+                    .accessibilityHidden(true)
+                Small("For reference: one way to draw it. Yours does not have to match.")
+            }
+            .padding(.top, 12)
+        }
+    }
+
     /// What the app says about this picture, if anything, then the page's own advice.
     private var advice: some View {
         Small(hint + (isIcon
@@ -645,6 +679,8 @@ public struct HandEditor: View {
 
     /// How tall the row of drawings already kept is.
     private static let thumb: CGFloat = 56
+    /// How large a picture's reference is shown, in points.
+    private static let referenceSide: CGFloat = 120
 
     /// The drawings already kept for this character, small, in the order they
     /// were drawn: what the pen will pick between. Tap one to pick it, and
@@ -959,7 +995,13 @@ public struct HandEditor: View {
         current = []
         // The icon stays where it is on "keep": the next thing to do is send it.
         if advance && !isIcon {
-            move(1)
+            // After a picture, the next one the app is still waiting for, if
+            // there is one: the pictures are asked for one after another.
+            if drawingName != nil, let next = waiting.first {
+                go(to: next)
+            } else {
+                move(1)
+            }
         } else {
             // The drawing just kept is picked, so "occasional" or "rare" is one tap away.
             picked = (hands.hand.glyphs[character]?.count ?? 1) - 1
