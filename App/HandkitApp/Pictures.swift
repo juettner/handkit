@@ -17,23 +17,26 @@ import SwiftUI
 enum Pictures {
     /// Pictures kept in the hand beside the letters, in the order the drawing
     /// page lists them. P.S. shows the first two as its envelopes, "drawer"
-    /// and "map" pinned at the left of its reader's row of envelopes,
+    /// and "map" pinned at the left of its reader's row of envelopes, "heart"
+    /// wherever its drawn map marks a place (the one in its widgets),
     /// "flashlight" in the middle of the dark page of a note read under the
     /// covers, "candle" and "candle-flame" the same way for a note read by
     /// candlelight, "seashell" on a note that came with the writer's voice,
     /// and the last three in the strip at the top of its reader's page.
-    static let names = ["envelope-sealed", "envelope-open", "drawer", "map", "flashlight", "candle", "candle-flame", "seashell", "doodle", "status-signal", "status-wifi", "status-battery"]
+    static let names = ["envelope-sealed", "envelope-open", "drawer", "map", "heart", "flashlight", "candle", "candle-flame", "seashell", "doodle", "status-signal", "status-wifi", "status-battery"]
     /// What the drawing page calls the ones whose names would read oddly.
     static let labels = ["candle-flame": "flame", "status-signal": "signal", "status-wifi": "wifi", "status-battery": "battery"]
     /// The pictures P.S. only ever shows small, at these sizes in points, so
     /// the drawing page gives each a box of that shape to fill and shows what
     /// is kept at its real size: the drawer and the map in its reader's row of
-    /// envelopes (Pinned.swift there), the flashlight, the candle and its
+    /// envelopes (Pinned.swift there), a heart on its drawn map (DrawnMap.swift
+    /// in its widgets), the flashlight, the candle and its
     /// flame on a dark page (Reveals.swift), and the three in the strip at the top of its reader's
     /// page (HandStatusBar.swift).
     static let sizes = [
         "drawer": CGSize(width: 44, height: 44),
         "map": CGSize(width: 44, height: 44),
+        "heart": CGSize(width: 26, height: 24),
         "flashlight": CGSize(width: 44, height: 44),
         "candle": CGSize(width: 30, height: 44),
         "candle-flame": CGSize(width: 14, height: 22),
@@ -46,6 +49,7 @@ enum Pictures {
     static let hints = [
         "drawer": "The drawer: where the envelopes that cannot be opened yet are kept. P.S. pins it at the lower left of the reader's row of envelopes, with \"drawer\" written under it. Only the first one you keep is used.",
         "map": "The map: everywhere a note has found the reader. P.S. pins it beside the drawer, with \"map\" written under it. Only the first one you keep is used.",
+        "heart": "A heart. P.S. marks a place with one on the reader's drawn map, the one a phone's widgets and a car's screen show: small and pale where a note has found them, larger and red where one is waiting. Draw it in plain ink: P.S. colors it. Keep three or four: the map takes turns between them, so no two places are marked quite alike.",
         "candle": "The candle, not burning: the wax and its wick, and no flame. For a note read by candlelight, the reader's whole screen is black with only this in the middle of it, until they tap to light it. Draw it in plain ink: P.S. shows it pale in the dark, and in ink once the page is lit. Only the first one you keep is used.",
         "candle-flame": "The flame, by itself. P.S. puts it on top of the candle when it is lit, with its foot on the wick, and lets it waver. Fill the box. In plain ink it is shown amber; give it a color of its own to keep that. Only the first one you keep is used.",
         "flashlight": "The flashlight: for a note read under the covers, the reader's whole screen is black with only this in the middle of it, until they tap to turn on the light. Draw it in plain ink: the page is dark, so P.S. shows it in a pale ink. Only the first one you keep is used.",
@@ -162,6 +166,18 @@ enum Pictures {
                 [3.05, 0.75, 2.65, 1.15],
                 [0.45, 0.95, 0.75, 0.55, 0.75, 0.55, 1.05, 0.95],
             ], advance: 3.4),
+        ],
+        "heart": [
+            Glyph(strokes: [
+                [1.5, 2.71, 1.46, 2.57, 1.2, 2.23, 0.71, 1.79, 0.21, 1.29, 0, 0.74, 0.21, 0.24, 0.71, 0, 1.2, 0.14, 1.46, 0.47, 1.5, 0.65, 1.5, 0.65, 1.54, 0.47, 1.8, 0.14, 2.29, 0, 2.79, 0.24, 3, 0.74, 2.79, 1.29, 2.29, 1.79, 1.8, 2.23, 1.54, 2.57, 1.5, 2.71],
+            ], advance: 3),
+            Glyph(strokes: [
+                [1.5, 0.65, 1.46, 0.47, 1.2, 0.14, 0.71, 0, 0.21, 0.24, 0, 0.74, 0.21, 1.29, 0.71, 1.79, 1.2, 2.23, 1.46, 2.57, 1.5, 2.71],
+                [1.5, 0.65, 1.54, 0.47, 1.8, 0.14, 2.29, 0, 2.79, 0.24, 3, 0.74, 2.79, 1.29, 2.29, 1.79, 1.8, 2.23, 1.54, 2.57, 1.5, 2.71],
+            ], advance: 3),
+            Glyph(strokes: [
+                [1.5, 3.82, 1.46, 3.59, 1.2, 3.01, 0.71, 2.26, 0.21, 1.42, 0, 0.74, 0.21, 0.24, 0.71, 0, 1.2, 0.14, 1.46, 0.47, 1.5, 0.65, 1.5, 0.65, 1.54, 0.47, 1.8, 0.14, 2.29, 0, 2.79, 0.24, 3, 0.74, 2.79, 1.42, 2.29, 2.26, 1.8, 3.01, 1.54, 3.59, 1.5, 3.82],
+            ], advance: 3),
         ],
         "flashlight": [
             Glyph(strokes: [

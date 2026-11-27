@@ -236,6 +236,24 @@ def map_():
     return [marked, pinned, old]
 
 
+def heart_halves(cx, cy, width):
+    """The same heart in two strokes, each from the dip at the top down to the point."""
+    whole = heart(cx, cy, width)
+    # `heart` goes point, left side, dip (written twice: a corner), right side, point.
+    dip = next(i for i in range(1, len(whole)) if whole[i] == whole[i - 1])
+    return [list(reversed(whole[:dip])), whole[dip:]]
+
+
+def hearts():
+    plain = [heart(1.5, 1.3, 3.0)]
+    # Two strokes, the way most people draw one: down the left, then down the right.
+    halves = heart_halves(1.5, 1.3, 3.0)
+    # Standing on the spot it marks: the same heart, drawn out to a long point, as a pin is.
+    middle = 1.3 + 2.5 * 3.0 / 32
+    pinned = [[(x, y if y < middle else middle + (y - middle) * 1.7) for x, y in heart(1.5, 1.3, 3.0)]]
+    return [plain, halves, pinned]
+
+
 def flashlight():
     side = [
         line((1.84, 0.48), (0, 0.48), (0, 1.28), (1.84, 1.28)),
@@ -424,6 +442,7 @@ GUIDES = [
     ("envelope-open", envelope_open),
     ("drawer", drawer),
     ("map", map_),
+    ("heart", hearts),
     ("flashlight", flashlight),
     ("candle", candle),
     ("candle-flame", candle_flame),
